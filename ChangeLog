@@ -1,3 +1,9 @@
+17 May 2003
+	- swirly revived. 
+	- patches from Michael Schnerr applied. Much thanks!
+	- rudimentary texture loading
+	- bug fixes, clean up of code. 
+
 6 September 2001
 	- Implemented FSCA and FSRRA - they should work but may not do 100% what the
 	  real DC versions do.

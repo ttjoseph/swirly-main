@@ -13,7 +13,7 @@ Libraries that Swirly is linked against:
 	- pthread
 
 I use Jam (http://public.perforce.com) instead of make but it shouldn't be too
-hard for to write a Makefile.
+hard to write a Makefile.
 
 You need to provide an IP.BIN for Swirly to run.  Marcus Comstedt's IP.BIN creator
 works - get it at http://mc.pp.se/dc.  Swirly comes with a boot ROM image (not
@@ -56,16 +56,10 @@ Known issues
   it could be optimized.
 - I don't trust the FPU implementation.  It's not complete and I haven't even tested the
   double-precision part.
-- Actually, nothing except the core CPU is correctly emulated, and nothing is complete.
-  I've just been writing skeletons of peripheral units just so I can get programs to work.
-  At this point, just because a program works on Swirly doesn't mean it will work on a DC.
-  If it works on a DC (and the stuff it uses is emulated on Swirly) it will likely work
-  on Swirly.  My goal is to remedy this situation, but for now, given time constraints,
-  all I can do is emulate just as much as is needed by demos.
 - Exceptions aren't supported.  Actually I used to have an implementation of the exception
   handling but it was designed horribly and didn't support proper exception priorities
   so I canned it.
-- There isn't usable Maple Bus support, so things like reading from controllers won't work.
+
 
 Debugger commands
 -----------------

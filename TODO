@@ -12,11 +12,6 @@
 	- Debugger commands to support double-precision stuff
 - Maple bus.
 - Finish the SREC loading support to make it tolerate unsuppored S types
-- Make 3D and OpenGL support better
-	- Design: setupGL(), drawFrame(), and makeScreen() in Gpu could be named better.  For
-	  example, setupGL has a bad name because in addition to setting up OpenGL it also does
-	  GL buffer swapping, when it seems that drawFrame() should do that.
-- Exceptions.
 	- Change SHCpu::go and Debugger because as it stands now each instruction is fetched twice
 	  whenever the debugger prompt is used.  We don't want the debugger prompt triggering
 	  exceptions.
