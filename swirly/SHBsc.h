@@ -1,7 +1,3 @@
-// SHBsc.h: interface for the SHBsc class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #ifndef _SHBSC_H_
 #define _SHBSC_H_
 
@@ -18,13 +14,11 @@ class SHBsc
 {
 public:
 	Dword hook(int event, Dword addr, Dword data);
-	SHBsc(class SHCpu *cpu);
+	SHBsc();
 	virtual ~SHBsc();
 private:
-	SHBsc() {};
 	void update();
 	Dword regs[256];
-	class SHCpu *cpu;
 };
 
 #endif

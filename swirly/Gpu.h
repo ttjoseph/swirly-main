@@ -2,11 +2,9 @@
 #define _GPU_H_
 
 #include "swirly.h"
-#include "SHCpu.h"
 
 #include <SDL/SDL.h>
 #include <GL/gl.h>
-
 
 /* 0xa05f8000 registers */
 #define GPU_REG_ID            0x00
@@ -44,18 +42,40 @@
 #define GPU_MAXBACKBUFFERS 8
 #define GPU_BACKBUFFERUNUSED 0xffffffff
 
-class Gpu 
+#define MAX_TEXTURES 128
+
+#define TEX_TWIDDLED 0x01
+#define TEX_VQ       0x02
+#define TEX_STRIDE   0x04
+#define TEX_MIPMAP   0x08
+#define TEX_LOADED   0x10
+
+class Gpu
 {
 
  public:
+	Gpu();
+
 	void handleTaWrite(Dword addr, Dword data);
 	void draw2DFrame();
 	Dword hook(int eventType, Dword addr, Dword data);
-	Gpu(SHCpu *shcpu);
+
 	virtual ~Gpu();
-	
-	SHCpu *cpu;
-	
+
+	struct _textures {
+	    int width;
+	    int height;
+	    int format;
+	    int options;
+	    Dword address;
+	    Dword checksum;
+	    Dword data;
+	    Dword bias; // unused
+	};
+
+	struct _textures textures[MAX_TEXTURES];
+	int currTexNum;
+
  private:
 	bool sane();
 	bool taEnabled();
@@ -75,27 +95,28 @@ class Gpu
 	void decompressVQ(Word *texture, Dword address, int w, int h);
 	void updateFPS();
 	
+	Dword checksum(Dword addr, Dword size);
+	
 	int fpsCounter;
 
 	Dword taRegs[0x400]; // registers + fog table + opl table
 	Float *fogTable;
 	Dword *oplTable;
-	/*
-	  a05f8000 - a05f81ff: regs      0x200
-	  a05f8200 - a05f85ff: fog_table 0x400
-	  a05f8600 - a05f8fff: opl_table 0xa00
-	*/
 
 	// clipping
 	int clipMode;
 	bool clipInside;
 	
-	SDL_Surface *screen, *currBackBuffer, *backBuffers[GPU_MAXBACKBUFFERS];
-	Dword backBufferDCAddrs[GPU_MAXBACKBUFFERS], recvBuf[16];
 	int dwordsReceived, dwordsNeeded;
+        SDL_Surface *screen, *currBackBuffer, *backBuffers[GPU_MAXBACKBUFFERS];
+	Dword backBufferDCAddrs[GPU_MAXBACKBUFFERS], recvBuf[16];
 	
 	int punchThru, transMod, transPoly, opaqMod, opaqPoly, lastType;
 	Dword lastOPBConfig; 
+
+	GLuint tex[MAX_TEXTURES];
+
+	int taQueueCount;
 };
 
 #endif

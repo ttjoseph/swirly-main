@@ -1,13 +1,7 @@
-// SHSci.h: interface for the SHSci class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #ifndef _SHSCI_H_
 #define _SHSCI_H_
 
 #include "swirly.h"
-#include "SHMmu.h"
-#include "SHCpu.h"
 
 // offsets from 0xffe80000
 #define SCSMR2 0
@@ -26,14 +20,12 @@ class SHSci
 public:
 	void reset();
 	Dword hook(int event, Dword addr, Dword data);
-	SHSci(SHCpu *cpu);
+	SHSci();
 	virtual ~SHSci();
 
 private:
-	SHSci() {}
 
 	Dword accessReg(int operation, Dword addr, Dword data);
-	class SHCpu *cpu;
 };
 
 #endif

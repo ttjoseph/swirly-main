@@ -2,20 +2,16 @@
 #define _SHMODEM_H_
 
 #include "swirly.h"
-#include "SHCpu.h"
 
 class Modem 
 {
 
  public:
-	Modem(class SHCpu *cpu);
+	Modem();
 	
 	Dword hook(int eventType, Dword addr, Dword data);
-	class SHCpu *cpu;
 	
  private:
-	
-	Modem() {}
 	
 };
 

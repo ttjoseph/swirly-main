@@ -1,44 +1,17 @@
+#include "Overlord.h"
 #include "Debugger.h"
-#include "SHCpu.h"
 #include "SHMmu.h"
+#include "Gpu.h"
+#include "SHCpu.h"
+#include "SHIntc.h"
+
 #include <stdio.h>
-#include <stdarg.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include "dcdis.h"
 
-struct exceptions 
-{
-	int handle;
-	char *id;
-};
-
-struct exceptions exceptionList[] = 
-{
-	{E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION, 
-	 "E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION"},
-	{E_INSTRUCTION_ADDRESS_ERROR, "E_INSTRUCTION_ADDRESS_ERROR"},
-	{E_INSTRUCTION_TLB_MISS, "E_INSTRUCTION_TLB_MISS"},
-	{E_INSTRUCTION_TLB_PROTECTION_VIOLATION, 
-	 "E_INSTRUCTION_TLB_PROTECTION_VIOLATION"},
-	{E_GENERAL_ILLEGAL_INSTRUCTION, "E_GENERAL_ILLEGAL_INSTRUCTION"},
-	{E_SLOT_ILLEGAL_INSTRUCTION, "E_SLOT_ILLEGAL_INSTRUCTION"},
-	{E_GENERAL_FPU_DISABLE, "E_GENERAL_FPU_DISABLE"},
-	{E_SLOT_FPU_DISABLE, "E_SLOT_FPU_DISABLE"},
-	{E_DATA_ADDRESS_ERROR_READ, "E_DATA_ADDRESS_ERROR_READ"},
-	{E_DATA_ADDRESS_ERROR_WRITE, "E_DATA_ADDRESS_ERROR_WRITE"},
-	{E_DATA_TLB_MISS_READ, "E_DATA_TLB_MISS_READ"},
-	{E_DATA_TLB_MISS_WRITE, "E_DATA_TLB_MISS_WRITE"},
-	{E_DATA_TLB_PROTECTION_VIOLATION_READ, 
-	 "E_DATA_TLB_PROTECTION_VIOLATION_READ"},
-	{E_DATA_TLB_PROTECTION_VIOLATION_WRITE, 
-	 "E_DATA_TLB_PROTECTION_VIOLATION_WRITE"},
-	{E_FPU, "E_FPU"},
-	{E_INITAL_PAGE_WRITE, "E_INITAL_PAGE_WRITE"},
-	{-1, "[-1 is not an exception]"}
-};
-
-Debugger::Debugger(class SHCpu *shcpu) : showStatusMessages(true), cpu(shcpu), branchTraceFile(NULL)
+Debugger::Debugger() : showStatusMessages(true), branchTraceFile(NULL)
 {
 	// create the breakpoint list
 	breakpoints = new Breakpoint[DBG_MAXBREAKPOINTS];
@@ -48,6 +21,7 @@ Debugger::Debugger(class SHCpu *shcpu) : showStatusMessages(true), cpu(shcpu), b
 	execBpSet = false;
 	memBpSet = false;
 	maxExecBp = maxMemBp = 0;
+	showFP = false;
 }
 
 Debugger::~Debugger()
@@ -61,32 +35,39 @@ Debugger::~Debugger()
 // returns false on error
 bool Debugger::runScript(char *fname)
 {
-	FILE *fp = fopen(fname, "r");
-	if(fp == NULL)
-		return false;
 
-	char tmp[1024], tmp2[1024];
-	while(!feof(fp))
-	{
-		if(fgets(tmp, 1024, fp) == NULL)
-			break;
-		// % is a comment character - everything to the right of it is ignored
-		for(Dword i=0; i<strlen(tmp); i++)
-		{
-			if(tmp[i] == '%')
-			{
-				tmp[i] = 0;
-				break;
-			}
-		}
-		// throw out blank lines
-		getToken(tmp, 1, tmp2);
-		if(strlen(tmp2) > 0)
-			dispatchCommand(tmp);
+    FILE *fp = fopen(fname, "r");
+    if(fp == NULL)
+	return false;
+    
+    printf("Executing %s...\n", fname);
+    
+    char tmp[1024], tmp2[1024];
+    while(!feof(fp))
+    {
+	if(fgets(tmp, 1024, fp) == NULL)
+	    break;
+
+	// % is a comment character - everything to the right of it is ignored
+	for(Dword i=0; i<strlen(tmp); i++)
+        {
+	    if(tmp[i] == '%')
+	    {
+		tmp[i] = 0;
+		break;
+	    }
 	}
+	// throw out blank lines
+	getToken(tmp, 1, tmp2);
+	if(strlen(tmp2) > 0)
+	    dispatchCommand(tmp);
+    }
+   
+    fclose(fp);
 
-	fclose(fp);
-	return true;
+    printf("\n");
+
+    return true;
 }
 
 void Debugger::print(char *fmt, ...)
@@ -98,28 +79,6 @@ void Debugger::print(char *fmt, ...)
 		vprintf(fmt, mrk);
 		va_end(mrk);
 	}
-}
-
-// we want to keep these from ever occurring...
-void Debugger::flamingDeath(char *fmt, ...)
-{
-	printf("************ FLAMING DEATH ************\n");
-	dumpRegs();
-	// if an exception is pending we don't want to cause another one
-	if(cpu->exceptionsPending <= 1)
-	{
-		Word d = cpu->mmu->fetchInstruction(cpu->PC);
-		printf("%08X: %04x: %s", cpu->PC, d, disasmInstr(d, cpu->PC));
-	}
-	else
-		printf("PC: %08X", cpu->PC);
-	printf("\n");
-	va_list mrk;
-	va_start(mrk, fmt);
-	vprintf(fmt, mrk);
-	va_end(mrk);
-	printf("\n");
-	exit(1);
 }
 
 // Reports a branch in execution so it can be logged to the
@@ -152,11 +111,11 @@ void Debugger::dumpRegs()
 	int i;
 	for(i=0;i<16;i+=2)
 	{
-		printf("R%-2d: %08X   R%-2d: %08X  ", i, cpu->R[i], i+1, cpu->R[i+1]);
+		printf("R%-2d : %08X  R%-2d : %08X  ", i, cpu->R[i], i+1, cpu->R[i+1]);
 
 		if(i==0) // print cpu->SR
 		{
-			printf("SR: [");
+			printf("SR:    [");
 			if(cpu->SR&F_SR_MD) printf("MD "); else printf("   ");
 			if(cpu->SR&F_SR_RB) printf("RB "); else printf("   ");
 			if(cpu->SR&F_SR_BL) printf("BL "); else printf("   ");
@@ -168,12 +127,6 @@ void Debugger::dumpRegs()
 			printf("]");
 		}
 		if(i==2)
-			printf("GBR: %08X  VBR: %08X", cpu->GBR, cpu->VBR);
-		if(i==4)
-			printf("SPC: %08X   PR: %08X", cpu->SPC, cpu->PR);
-		if(i==6)
-			printf("MACH MACL: %08X %08X", cpu->MACH, cpu->MACL);
-		if(i==8)
 		{
 			int fpscr = cpu->FPSCR;
 			printf("FPSCR: [%s %s %s %s %d]",
@@ -183,9 +136,7 @@ void Debugger::dumpRegs()
 				fpscr & F_FPSCR_DN ? "DN" : "  ",
 				bits(fpscr, 1, 0));
 		}
-		if(i==10)
-			printf("FPUL: %.4f %08X", *((float*)&cpu->FPUL), cpu->FPUL);
-		if(i==12)
+		if(i==4)
 		{
 			//printf("MMUCR: %08X", CCNREG(MMUCR));
 			int mmucr = CCNREG(MMUCR);
@@ -198,16 +149,57 @@ void Debugger::dumpRegs()
 				bits(mmucr, 2, 2) ? "TI" : "  ",
 				bits(mmucr, 0, 0) ? "AT" : "  ");
 		}
-		if(i==14)
+		if(i==6)
 		{
-			printf("PTEH PTEL PTEA: %08X %08X %02X",
+			printf("PTEH: %08X  PTEL: %08X PTEA: %02X",
 				*((Dword*)(cpu->ccnRegs+PTEH)),
 				*((Dword*)(cpu->ccnRegs+PTEL)),
 				*((Dword*)(cpu->ccnRegs+PTEA)) );
 		}
+		if(i==8)
+			printf("FPUL: %08X  (%.4ff)", cpu->FPUL, *((float*)&cpu->FPUL));
+		if(i==10)
+			printf("MACH: %08X  MACL: %08X", cpu->MACH, cpu->MACL);
+		if(i==12)
+			printf("GBR : %08X  VBR : %08X", cpu->GBR, cpu->VBR);
+		if(i==14)
+			printf("SPC : %08X  PR  : %08X", cpu->SPC, cpu->PR);
 		printf("\n");
 	}
 
+	if(!showFP) return;
+
+	for(i=0;i<16;i+=2)
+	{
+		printf("FR%-2d: %08X  ", i,  *(Dword*)&cpu->FR[i]);
+		printf("FR%-2d: %08X  ", i+1, *(Dword*)&cpu->FR[i+1]);
+		printf("XF%-2d: %08X  ", i,  *(Dword*)&cpu->XF[i]);
+		printf("XF%-2d: %08X  ", i+1, *(Dword*)&cpu->XF[i+1]);
+
+		printf("\n");
+	}
+}
+
+void Debugger::flamingDeath(char *fmt, ...)
+{
+    printf("************ FLAMING DEATH ************\n");
+    dumpRegs();
+    // if an exception is pending we don't want to cause another one
+    if(intc->exceptionsPending <= 1)
+    {
+	Word d = mmu->fetchInstruction(cpu->PC);
+	printf("%08X: %04x: %s", cpu->PC, d, disasmInstr(d, cpu->PC));
+    }
+    else
+	printf("PC: %08X", cpu->PC);
+    
+    printf("\n");
+    va_list mrk;
+    va_start(mrk, fmt);
+    vprintf(fmt, mrk);
+    va_end(mrk);
+    printf("\n");
+    exit(1);
 }
 
 // decides whether we've hit an execution breakpoint, and if so, turns on the
@@ -226,6 +218,43 @@ inline void Debugger::checkExecBp()
 			promptOn = true;
 		}
 	}
+}
+
+char *textureFormat[] = { "ARGB1555",
+			  "RGB565",
+			  "ARGB4444",
+			  "YUV422",
+			  "BUMP",
+			  "4BPP PALETTE",
+			  "8BPP PALETTE" };
+
+void Debugger::printTexInfo(int num)
+{   
+    printf("texture #%d data: %s, %dx%d, address %08x\n", 
+	   num, textureFormat[gpu->textures[num].format], 
+	   gpu->textures[num].width, gpu->textures[num].height, 
+	   gpu->textures[num].address);
+    
+    printf("texture #%d options: %s%s%s%s\n", num, 
+	   gpu->textures[num].options & TEX_TWIDDLED ? "twiddled" : "",
+	   gpu->textures[num].options & TEX_VQ ? "VQ-compressed " : "",
+	   gpu->textures[num].options & TEX_STRIDE ? "stride " : "",
+	   gpu->textures[num].options & TEX_MIPMAP ? "mipmap" : "");
+    
+    gpu->textures[num].options |= TEX_LOADED;
+}
+
+bool Debugger::cmdTex(char *cmd)
+{
+    printf("\nTextures loaded:\n");
+
+    for(int i=0; i<gpu->currTexNum; i++)
+    {
+	printTexInfo(i);
+    }
+    printf("\n");
+
+    return false;
 }
 
 // Does the debugger prompt stuff.
@@ -279,6 +308,9 @@ bool Debugger::dispatchCommand(char *cmd)
 	DO_CMD("trb", cmdTrb);
 	DO_CMD("stat", cmdStat);
 	DO_CMD("f", cmdF);
+	DO_CMD("fp", cmdFP);
+	DO_CMD("i", cmdI);
+	DO_CMD("tex", cmdTex);
 
 #undef DO_CMD
 
@@ -353,8 +385,14 @@ bool Debugger::isWhitespace(char c)
 bool Debugger::cmdPath(char *cmd) 
 {
 	getToken(cmd, 1, path);
-	printf("Path environment has been set to %s...\n", path);
-	return true;
+	printf("Path environment has been set to %s\n", path);
+	return false;
+}
+
+bool Debugger::cmdFP(char *cmd)
+{
+    showFP = !showFP;
+    return false;
 }
 
 // debugger command to dump memory
@@ -375,19 +413,26 @@ bool Debugger::cmdD(char *cmd)
 		printf("%08X: ", i);
 		for(j=i;j<i+rowlen;j+=2)
 		{
-			printf("%02X%02X ", cpu->mmu->readByte(j), cpu->mmu->readByte(j+1));
+			printf("%02X%02X ", mmu->readByte(j), mmu->readByte(j+1));
 		}
 		printf(" ");
 
 		for(j=i;j<i+rowlen;j++)
 		{
-			c = cpu->mmu->readByte(j);
+			c = mmu->readByte(j);
 			printf("%c", c<32 ? '.' : c);
 		}
 		printf("\n");
 	}
 
 	return false;
+}
+
+bool Debugger::cmdI(char *cmd)
+{
+    intc->printInterrupts();
+
+    return false;
 }
 
 // toggle reporting of status messages on and off
@@ -476,21 +521,21 @@ bool Debugger::cmdL(char *cmd)
 	
 	if(strcmp(ext, ".srec")==0) 
         {
-		printf("Loading %s as SREC...\n", fname);
-		cpu->overlord->loadSrec(fullPath);
+		printf("Loading %s as SREC\n", fname);
+		overlord->loadSrec(fullPath);
 	} 
 	else if(strcmp(ext, ".elf")==0) 
         {
-		printf("Loading %s as ELF...\n", fname);
-		cpu->overlord->loadElf(fullPath);
+		printf("Loading %s as ELF\n", fname);
+		overlord->loadElf(fullPath);
 	} 
 	else 
         {
 		sscanf(addr, "%x", &theaddr);
 		if(strlen(addr) == 0) theaddr = 0x8c010000; // default
 		
-		printf("Loading %s as flat binary to %08x...\n", fname, theaddr);
-		cpu->overlord->load(fullPath, theaddr);
+		printf("Loading %s as flat binary to %08x\n", fname, theaddr);
+		overlord->load(fullPath, theaddr);
 	}
 	
 	return true;
@@ -543,7 +588,7 @@ bool Debugger::cmdG(char *cmd)
 // Draw Frame - tells Gpu to refresh the screen
 bool Debugger::cmdDf(char *cmd)
 {
-	cpu->gpu->draw2DFrame();
+	gpu->draw2DFrame();
 	printf("2D screen refreshed with Gpu::draw2DFrame.\n");
 	return false;
 }
@@ -726,7 +771,7 @@ bool Debugger::cmdR(char *cmd)
 // usually you'll use this to show the delay slot instruction
 bool Debugger::cmdUf(char *cmd)
 {
-    Word d = cpu->mmu->fetchInstruction(cpu->PC + 2);
+    Word d = mmu->fetchInstruction(cpu->PC + 2);
     printf("%08x: %04x: %s\n", cpu->PC, d, disasmInstr(d, cpu->PC));
     return false;
 }
@@ -734,6 +779,9 @@ bool Debugger::cmdUf(char *cmd)
 // executes until an rte or rts
 bool Debugger::cmdF(char *cmd)
 {
+
+    // disabled for now
+#if 0
 	Word d;
 
 	promptOn = false;
@@ -741,13 +789,13 @@ bool Debugger::cmdF(char *cmd)
 	// XXX: this doesn't look right. what if an exception occurs? 
 	while(promptOn == false)
 	{
-		d = cpu->mmu->fetchInstruction(cpu->PC);
+		d = mmu->fetchInstruction(cpu->PC);
 		if((d == 0x002b) || (d == 0x000b))
 			promptOn = true;
 		else 
 			cpu->executeInstruction(d);
 	}
-
+#endif
 	return false;
 }
 
@@ -794,19 +842,6 @@ void Debugger::updateMaxBp(int type, int *max)
 			*max = i;
 	}
 	promptOn=true;
-}
-
-// retrieves a pointer to the name of an exception
-char* Debugger::getExceptionName(int exception)
-{
-	struct exceptions *ptr = exceptionList;
-	while(ptr->handle != -1)
-	{
-		if(ptr->handle == exception)
-			return ptr->id;
-		ptr++;
-	}
-	return "[Unknown exception]";
 }
 
 char* Debugger::disasmInstr(Word d, Dword pc)

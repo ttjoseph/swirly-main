@@ -1,30 +1,20 @@
-// SHTmu.h: interface for the SHTmu class.
-//
-// This is an implementation of the SH4's TMU
-//////////////////////////////////////////////////////////////////////
-
 #ifndef _SHTMU_H_
 #define _SHTMU_H_
 
 #include "swirly.h"
-#include "SHCpu.h"
-#include "SHMmu.h"
 
 class SHTmu
 {
 public:
 	void reset();
 	Dword hook(int event, Dword addr, Dword data);
-	SHTmu(SHCpu *cpu);
+	SHTmu();
 	virtual ~SHTmu();
-
-	class SHCpu *cpu;
 
 	void updateTCNT0();
 	void updateTCNT1();
 
 private:
-	SHTmu() {}
 	void update();
 	void updateTcnt(Dword *tcnt, int id, Dword starttime);
 

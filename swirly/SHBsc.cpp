@@ -1,14 +1,9 @@
-// SHBsc.cpp: implementation of the SHBsc class.
-//
-// This is the SH4's BSC unit.
-//////////////////////////////////////////////////////////////////////
-
 #include "SHBsc.h"
 #include "SHMmu.h"
+#include "Debugger.h"
 
-SHBsc::SHBsc(class SHCpu *cpu)
+SHBsc::SHBsc()
 {
-	this->cpu = cpu;
 	regs[PCTRA] = regs[PCTRB] = 0;
 }
 
@@ -35,6 +30,7 @@ Dword SHBsc::hook(int event, Dword addr, Dword data)
 		update();
 		return 0;
 	default:
+	    //debugger->print("Unknown SHBsc address %08x\n", addr);
 		return 0;
 	}
 }
@@ -45,5 +41,13 @@ void SHBsc::update()
 	// 0: VGA
 	// 2: RGB
 	// 3: composite
+    static bool test = false; // HACK HACK to get dreamcast boot rom working
+
+    if(test) {
 	regs[PDTRA] = 0 << 8;
+	test = false;
+    } else {
+	regs[PDTRA] = 0x3;
+	test = true;
+    }
 }

@@ -1,8 +1,8 @@
 #ifndef _GDROM_H_
 #define _GDROM_H_
 
+#include <stdio.h>
 #include "swirly.h"
-#include "SHCpu.h"
 
 enum
 {
@@ -21,9 +21,20 @@ enum
 
 enum
 {
+        GDROM_CMD_PIOREAD = 16,
+	GDROM_CMD_DMAREAD = 17,
+	GDROM_CMD_GETTOC = 18,
+	GDROM_CMD_GETTOC2 = 19,
+	GDROM_CMD_PLAY = 20,
+	GDROM_CMD_PLAY2 = 21,
+	GDROM_CMD_PAUSE = 22,
+	GDROM_CMD_RELEASE = 23,
 	GDROM_CMD_INIT = 24,
-	GDROM_CMD_READTOC = 19,
-	GDROM_CMD_READSECTORS = 16
+	GDROM_CMD_SEEK = 27,
+	GDROM_CMD_READ = 28,
+	GDROM_CMD_STOP = 33,
+	GDROM_CMD_GETSCD = 34,
+	GDROM_CMD_GETSES = 35,
 };	
 	
 class Gdrom  
@@ -33,22 +44,19 @@ public:
 	void hook();
 	void startSector(int startsector) { startSector_ = startsector; }
 	int startSector() { return startSector_; }
-	Gdrom(SHCpu *shcpu, int startsector, int sectorsize = 0);
+	Gdrom(int startsector, int sectorsize = 0);
 	virtual ~Gdrom();
 	int startSector_, sectorSize;
 	FILE *cdImage;
 
 private:
-	Gdrom() {};
-	class SHCpu *cpu;
-
 	// startSector is the physical sector number where the CD image logically starts
 
 	struct Toc
 	{
 		Dword entry[99];
 		Dword first, last;
-		Dword whoKnows;
+		Dword leadOutSector;
 	};
 
 };

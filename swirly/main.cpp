@@ -1,25 +1,28 @@
-// Swirly main
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 
 #include <SDL/SDL.h>
 
-#include "SHCpu.h"
+#include "Dreamcast.h"
+#include "Debugger.h"
 
-SHCpu *cpu;
+#define AUTOEXEC "autoexec.script"
+
+Dreamcast *dreamcast;
+Debugger *debugger;
 SDL_Surface *icon;
 
 void onDeath(int signal) {
-    cpu->debugger->flamingDeath("Oh no, a segfault.");
+    debugger->flamingDeath("Oh no, a segfault.");
 }
 
-void sigintHandler(int signal) {
-    cpu->debugger->promptOn = true;
+void onInterrupt(int signal) {
+    debugger->promptOn = true;
 }
 
-void exitHandler() {
-    delete cpu;
+void onExit() {
+    delete dreamcast;
     SDL_FreeSurface(icon);
     SDL_Quit();
 }
@@ -31,63 +34,40 @@ int main(int argc, char *argv[]) {
 
     // SIGINT isn't supposed to work on Win32 so we won't even try
 #ifndef _WIN32
-    signal(SIGINT, sigintHandler); // so we can hit Ctrl+C in *nix to exit
+    signal(SIGINT, onInterrupt); 
 #endif
     signal(SIGSEGV, onDeath);
     
-    // SDL init stuff
     SDL_Init(SDL_INIT_VIDEO);
-    atexit(exitHandler);
+    atexit(onExit);
     
     icon = SDL_LoadBMP("../misc/swirly-icon.ico");
     if(icon != NULL)
 	SDL_WM_SetIcon(icon, NULL);
 
-    // for now: argc-1 indicates controller, otherwise keyboard/mouse
-    cpu = new SHCpu(argc-1); 
+    dreamcast = new Dreamcast(argc-1);
+    debugger = new Debugger();
+
+    if(debugger->runScript(AUTOEXEC) == false)
+	printf("Possibly fatal error: could not find %s!\n", AUTOEXEC);
     
-    // *** EXAMPLES ***
+    dreamcast->run();
 
-    // to load the boot ROM:
-    // cpu->overlord->load("../fakebootrom/fbr.bin", 0xA0000000);
-
-    // to load flash memory (nonessential):
-    // cpu->overlord->loadToHost("../images/flash", (Dword) cpu->mmu->flash);
-
-    // to load a flat binary:
-    // cpu->overlord->load("../images/dreampac_unscrambled.bin",0x8c010000);
-
-    // to load a SREC file:
-    // cpu->overlord->loadSrec("../images/stars.srec");
-
-    // to load an ISO: 
-    // cpu->gdrom->startSector(0);
-    // cpu->gdrom->load("something.iso");
-
-    printf("Executing autoexec.script...\n");
-    if(cpu->debugger->runScript("autoexec.script") == false)
-	printf("Couldn't find autoexec.script!\n");
-    
-    printf("Fasten your seatbelts.\n\n");
-    
-    //cpu->go_rec();
-    cpu->go();
-    
     return 0;
 }
 
-/*
-// these are so we can use ElectricFence
+
+#if 0 // these are so we can use ElectricFence
 void* operator new(size_t sz)
 {
-	printf("new %d!", (int)sz);
-	return malloc(sz);
+    printf("new %d!", (int)sz);
+    return malloc(sz);
 }
 
 
 void operator delete(void* p)
 {
-	printf("delete!");
-	free(p);
+    printf("delete!");
+    free(p);
 }
-*/
+#endif

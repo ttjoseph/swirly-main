@@ -3,16 +3,28 @@
 #include "swirly.h"
 #include "SHMmu.h"
 #include "SHCpu.h"
+#include "Debugger.h"
+#include "SHUbc.h"
+#include "SHTmu.h"
+#include "Maple.h"
+#include "Gpu.h"
+#include "Modem.h"
+#include "SHBsc.h"
+#include "SHDmac.h"
+#include "SHSci.h"
+#include "SHIntc.h"
+#include "Spu.h"
 
-SHMmu::SHMmu(class SHCpu *cpu)
+SHMmu::SHMmu()
 {
-	this->cpu = cpu;
 	mem = new Byte[MMU_DEFAULT_MEM_SIZE];
 	cache = new Byte[MMU_CACHE_SIZE];
 	flash = new Byte[MMU_FLASH_SIZE];
 	videoMem = new Byte[MMU_VIDEOMEM_SIZE];
 	bootRom = new Byte[MMU_BOOTROM_SIZE];
 	soundMem = new Byte[MMU_SOUNDMEM_SIZE];
+	texMem = new Byte[MMU_TEXMEM_SIZE];
+
 	for (int i = 0; i < 64; i++) 
 		UTLB_Data1[i] = 0;
 }
@@ -25,6 +37,7 @@ SHMmu::~SHMmu()
 	delete [] videoMem;
 	delete [] bootRom;
 	delete [] soundMem;
+	delete [] texMem;
 }
 
 Byte SHMmu::readByte(Dword addr)
@@ -89,7 +102,7 @@ void SHMmu::writeDouble(Dword addr, Double d)
 {
 	writeDword(addr, *(((Dword*)&d)));
 	writeDword(addr+4, *(((Dword*)&d)+4));
-	// cpu->debugger->flamingDeath("writeDouble not implemented yet");
+	// debugger->flamingDeath("writeDouble not implemented yet");
 }
 
 void SHMmu::writeFloat(Dword addr, Float d)
@@ -102,7 +115,7 @@ void SHMmu::writeFloat(Dword addr, Float d)
 
 Double SHMmu::readDouble(Dword addr)
 {
-	//	cpu->debugger->flamingDeath("readDouble not implemented yet");
+	//	debugger->flamingDeath("readDouble not implemented yet");
 	Dword tmp[2];
 	tmp[0] = readDword(addr);
 	tmp[1] = readDword(addr+4);
@@ -136,12 +149,9 @@ Word SHMmu::fetchInstruction(Dword addr) {
 			if(theentry == MMU_TLB_MISS) {
 				utlbentry = searchUtlb(addr);
 				if(utlbentry == MMU_TLB_MISS) { // sheesh, not even in the UTLB
-					cpu->exception(E_INSTRUCTION_TLB_MISS, addr, 0);
-					cpu->SPC = cpu->PC;
-					cpu->SSR = cpu->SR;
-					CCNREG(EXPEVT) = E_DATA_TLB_MISS_READ; 
-					cpu->SR |= (F_SR_MD|F_SR_RB|F_SR_BL);
-					cpu->PC = cpu->VBR + 0x400;
+					intc->exception(E_INSTRUCTION_TLB_MISS, addr, 0);
+
+					//CCNREG(EXPEVT) = E_DATA_TLB_MISS_READ; 
 					return 0;
 				}
 				// we must now copy the UTLB entry into the ITLB
@@ -154,7 +164,7 @@ Word SHMmu::fetchInstruction(Dword addr) {
 				else if((lrui & 0x15) == 0x01) theentry = 2;
 				else if((lrui & 0x0b) == 0x00) theentry = 3;
 				else
-					cpu->debugger->flamingDeath("MMUCR.LRUI is set to some weird setting!");
+					debugger->flamingDeath("MMUCR.LRUI is set to some weird setting!");
 				
 				ITLB_Addr[theentry] = UTLB_Addr[utlbentry];
 				ITLB_Data1[theentry] = UTLB_Data1[utlbentry];
@@ -179,7 +189,7 @@ Word SHMmu::fetchInstruction(Dword addr) {
 				CCNREG(MMUCR) |= 0x2c000000;
 				break;
 			default:
-				cpu->debugger->flamingDeath("Trying to look at an ITLB entry that can't exist.");
+				debugger->flamingDeath("Trying to look at an ITLB entry that can't exist.");
 			}
 			
 			if(cpu->SR & F_SR_MD) { // SR.MD == 1?
@@ -223,7 +233,7 @@ Word SHMmu::fetchInstruction(Dword addr) {
 				}
 				else
 				{
-					cpu->exception(E_INSTRUCTION_TLB_PROTECTION_VIOLATION, addr, 0);
+					intc->exception(E_INSTRUCTION_TLB_PROTECTION_VIOLATION, addr, 0);
 					return 0;
 				}
 			} // if SR.MD == 1
@@ -247,132 +257,92 @@ Word SHMmu::fetchInstruction(Dword addr) {
 		}
 		else 
                 {
-			cpu->exception(E_INSTRUCTION_ADDRESS_ERROR, addr, 0);
+			intc->exception(E_INSTRUCTION_ADDRESS_ERROR, addr, 0);
 			return 0;
 		}
 	break;
 	} // switch(addr >> 29)
-	cpu->debugger->flamingDeath("Reached a point in SHMmu::fetchInstruction that we should never reach");
+	debugger->flamingDeath("Reached a point in SHMmu::fetchInstruction that we should never reach");
 	return 0; // shouldn't ever reach here
 }
 
 // translates an SH virtual address to an external address
 Dword SHMmu::translateVirtual(Dword addr)
 {
-	cpu->debugger->checkMemBp(addr);
+	debugger->checkMemBp(addr);
 	
 	unsigned int theentry;
-	// TODO: make this actually work
+	// XXX: make this actually work
 	switch(addr >> 29)
 	{
 	case 0: // P0, U0
 	case 3:
 	case 6: // P3
 		// if AT bit is on (address translation on)...
-		if(cpu->ccnRegs[MMUCR] & 1)
+	        if(cpu->ccnRegs[MMUCR] & 1)
 		{
-				// find an entry
-			theentry = searchUtlb(addr);
-				// we couldn't find an entry, so throw an exception
+		        // find an entry
+		        theentry = searchUtlb(addr);
+			// we couldn't find an entry, so throw an exception
 			if(theentry == MMU_TLB_MISS)
 			{
 				if(eventType & MMU_READ) {
-					cpu->exception(E_DATA_TLB_MISS_READ, addr, 0);
-					CCNREG(TEA) = addr;
-					CCNREG(PTEH) = (CCNREG(PTEH) & 0x3ff) | (addr & ~0x3ff);
-					cpu->SPC = cpu->PC;
-					cpu->SSR = cpu->SR;
-					CCNREG(EXPEVT) = E_DATA_TLB_MISS_READ; 
-					cpu->setSR(cpu->SR|F_SR_MD|F_SR_BL|F_SR_RB);
-					cpu->PC = cpu->VBR + 0x400;
-				//						throw xMMUException();
-					return 0;
+					intc->exception(E_DATA_TLB_MISS_READ, addr, 0);
 				} else if(eventType & MMU_WRITE) {
-					cpu->exception(E_DATA_TLB_MISS_WRITE, addr, 0);
-					CCNREG(TEA) = addr;
-					CCNREG(PTEH) = (CCNREG(PTEH) & 0x3ff) | (addr & ~0x3ff);
-					cpu->SPC = cpu->PC;
-					cpu->SSR = cpu->SR;
-					CCNREG(EXPEVT) = E_DATA_TLB_MISS_WRITE; 
-					cpu->setSR(cpu->SR|F_SR_MD|F_SR_BL|F_SR_RB);
-					cpu->PC = cpu->VBR + 0x400;
-				//						throw xMMUException();
-					return 0;
+					intc->exception(E_DATA_TLB_MISS_WRITE, addr, 0);
 				} else
-					cpu->debugger->flamingDeath("Something's fishy here - unknown MMU operation");
+					debugger->flamingDeath("Something's fishy here - unknown MMU operation");
+
+				debugger->promptOn = true;
+
+				CCNREG(TEA) = addr;
+				CCNREG(PTEH) = (CCNREG(PTEH) & 0x3ff) | (addr & ~0x3ff);
 				
 				return 0;
-			} // if(can't find entry)
-				// Now we know that VPNs match and V=1(the entry is valid)
-				// We must check for Data TLB protection violation exception
-				// To do this we use the PR bits, in UTLB_Data1, bits 6-5
+			} 
+			// Now we know that VPNs match and V=1(the entry is valid)
+			// We must check for Data TLB protection violation exception
+			// To do this we use the PR bits, in UTLB_Data1, bits 6-5
 			printf("SHMmu::translateVirtual: address %08x RPN %08x\n", addr, UTLB_Data1[theentry]);
-			if(cpu->SR & F_SR_MD)
+
+			int PR = (UTLB_Data1[theentry] >> 5) & 3;
+
+			if (((PR & 0x2) == 0) && (cpu->SR & F_SR_MD)==0) {
+			        if(eventType & MMU_WRITE)
+				        intc->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
+				else
+				        intc->exception(E_DATA_TLB_PROTECTION_VIOLATION_READ, addr, 0);
+				return 0;
+			}
+
+			if(eventType & MMU_WRITE)
 			{
-				int PR = (UTLB_Data1[theentry] >> 5) & 3;
-				if(eventType & MMU_WRITE)
-				{
-					if ((PR & 0x1) == 0) {						
-						cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
-						return 0;
-					} else if ((UTLB_Data1[theentry] & 0x4) == 0) {
-						cpu->exception(E_INITAL_PAGE_WRITE, addr, 0);
-						return 0;
-					}
+			        if ((PR & 0x1) == 0) {						
+				       	intc->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
+				       	return 0;
+				} else if ((UTLB_Data1[theentry] & 0x4) == 0) {
+				       	intc->exception(E_INITAL_PAGE_WRITE, addr, 0);
+				       	return 0;
 				}
-				// yes! success!!
-				// now we figure the page size and then return the correct
-				// physical address
-				// SZ is in bits 7 and 4 of UTLB_Data1[theentry]
-				switch(UTLB_Data1[theentry] & 9)
-				{
-				case 0: // 1K pages - use PPN[28:10] and offset[9:0]
-					return ((UTLB_Data1[theentry] & 0x1ffffc00) | (addr & 0x3ff));
-				case 1: // 4K pages
-					return ((UTLB_Data1[theentry] & 0x1ffff000) | (addr & 0xfff));
-				case 8: // 64K pages
-					return ((UTLB_Data1[theentry] & 0x1fff0000) | (addr & 0xffff));
-				case 9: // 1M pages
-					return ((UTLB_Data1[theentry] & 0x1ff00000) | (addr & 0xfffff));
-				}
-			    // shouldn't ever reach here
-				cpu->debugger->flamingDeath("SHMmu::translateVirtual: the unthinkable has happened on line %d.", __LINE__);
-			} // if(SR.MD)
-			else
+			}
+
+			// now we figure the page size and then return the correct
+			// physical address
+			// SZ is in bits 7 and 4 of UTLB_Data1[theentry]
+			switch(UTLB_Data1[theentry] & 9)
 			{
-				int PR = (UTLB_Data1[theentry] >> 5) & 3;
-				if ((PR & 0x2) == 0) {						
-					if(eventType & MMU_WRITE)
-						cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
-					else
-						cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_READ, addr, 0);
-					return 0;
-				}
-				if(eventType & MMU_WRITE) {
-					if ((PR & 0x1) == 0) {						
-						cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
-						return 0;
-					} else if ((UTLB_Data1[theentry] & 0x4) == 0) {
-						cpu->exception(E_INITAL_PAGE_WRITE, addr, 0);
-						return 0;
-					}
-				}
-				// yay! success!
-				// now we figure the page size and then return the correct
-				// physical address
-				// SZ is in bits 7 and 4 of UTLB_Data1[theentry]
-				switch(UTLB_Data1[theentry] & 9)
-					{
-					case 0: // 1K pages - use PPN[28:10] and offset[9:0]
-						return ((UTLB_Data1[theentry] & 0x1ffffc00) | (addr & 0x3ff));
-					case 1: // 4K pages
-						return ((UTLB_Data1[theentry] & 0x1ffff000) | (addr & 0xfff));
-					case 8: // 64K pages
-						return ((UTLB_Data1[theentry] & 0x1fff0000) | (addr & 0xffff));
-					case 9: // 1M pages
-						return ((UTLB_Data1[theentry] & 0x1ff00000) | (addr & 0xfffff));
-					}
-			} // else (SR.MD)
+			case 0: // 1K pages - use PPN[28:10] and offset[9:0]
+			        return ((UTLB_Data1[theentry] & 0x1ffffc00) | (addr & 0x3ff));
+			case 1: // 4K pages
+			        return ((UTLB_Data1[theentry] & 0x1ffff000) | (addr & 0xfff));
+			case 8: // 64K pages
+			        return ((UTLB_Data1[theentry] & 0x1fff0000) | (addr & 0xffff));
+			case 9: // 1M pages
+			        return ((UTLB_Data1[theentry] & 0x1ff00000) | (addr & 0xfffff));
+			default: 
+			        debugger->flamingDeath("Unknown size in UTLB_Data1\n");
+			}
+
 		} // if(MMUCR.AT)
 		else // no address translation, just zero 3 high bits
 			return addr & 0x1fffffff;
@@ -387,22 +357,18 @@ Dword SHMmu::translateVirtual(Dword addr)
 		else // user mode can't touch this area
 		{
 			if(eventType & MMU_READ)
-				cpu->exception(E_DATA_ADDRESS_ERROR_READ, addr, 0);
+				intc->exception(E_DATA_ADDRESS_ERROR_READ, addr, 0);
 			else if(eventType & MMU_WRITE)
-				cpu->exception(E_DATA_ADDRESS_ERROR_WRITE, addr, 0);
-			else
-				cpu->debugger->flamingDeath("Oh gosh no.  Unknown MMU operation.");
+				intc->exception(E_DATA_ADDRESS_ERROR_WRITE, addr, 0);
 			return 0;
 		}
 	    
 		// XXX: we shouldn't ever reach here -- P4 should be caught before this
 	case 7: // P4 area
 		return addr; // whee
-		//cpu->debugger->flamingDeath("translateVirtual: Attempting to handle a P4 access"
-				//" that should be handled by doDriverHook()");
 	}
     
-	cpu->debugger->flamingDeath("SHMmu::translateVirtual: didn't translate");
+	debugger->flamingDeath("SHMmu::translateVirtual: didn't translate");
 	return addr & 0x1fffffff; // zero 3 high bits
     
 }
@@ -412,10 +378,8 @@ int SHMmu::checkAsids(Dword tlbentry)
 	// see if ASIDs should match and if so, check if they do
 	// (SH==0) and (MMUCR.SV==0 or SR.MD==0)?
 	if(!(tlbentry & 2) &&
-	   (
-	    ((*((Dword*)(cpu->ccnRegs+MMUCR)) & 0x100) == 0) ||
-	    ((cpu->SR & 0x40000000) == 0)
-	    ))
+	   (((*((Dword*)(cpu->ccnRegs+MMUCR)) & 0x100) == 0) ||
+	    ((cpu->SR & 0x40000000) == 0)))
 	{
 		// ASIDs must match
 		if((*((Dword*)(cpu->ccnRegs+PTEH))&0xff) != (tlbentry & 0xff))
@@ -430,6 +394,7 @@ int SHMmu::checkAsids(Dword tlbentry)
 int SHMmu::searchUtlb(Dword addr)
 {
 	int i, theentry = MMU_TLB_MISS; // nonsense value to signal an error
+
 	updateMmucrUrc();
 	for(i=0;i<64;i++)
 	{
@@ -451,15 +416,15 @@ void SHMmu::updateMmucrUrc()
 {
 	Byte urb, urc;
 	
-	urb = (CCNREG(MMUCR) >> 18)	& 0x3f;
+	urb = (CCNREG(MMUCR) >> 18) & 0x3f;
 	urc = (CCNREG(MMUCR) >> 10) & 0x3f;
 	if((urb > 0) && (urb == urc))
 		urc = 0;
 	else
 		urc++;
+
 	CCNREG(MMUCR) &= ~(0x3f << 10);
-	CCNREG(MMUCR) |= ((urc & 0x3f) << 10);
-	
+	CCNREG(MMUCR) |= ((urc & 0x3f) << 10);	
 }
 
 int SHMmu::searchItlb(Dword addr)
@@ -484,7 +449,7 @@ int SHMmu::searchItlb(Dword addr)
 void SHMmu::ldtlb()
 {
 	// XXX: write me!
-	//	cpu->debugger->flamingDeath("SHMmu::ldtlb not implemented yet.");
+	//	debugger->flamingDeath("SHMmu::ldtlb not implemented yet.");
 	int addr = bits(CCNREG(MMUCR), 15, 10);
 	printf("SHMmu::ldtlb: at %02x with PTEH: %08x PTEL %08x PTEA %02x\n", addr, CCNREG(PTEH), CCNREG(PTEL),CCNREG(PTEA));
 	UTLB_Addr[addr] = CCNREG(PTEH);
@@ -509,7 +474,7 @@ void SHMmu::storeQueueSend(Dword target) {
 	
 	if(addr == 0x10000000) { // tile accelerator
 		for(int i=0; i<8; i++)
-			cpu->gpu->handleTaWrite(0x10000000, sq[i]);
+			gpu->handleTaWrite(0x10000000, sq[i]);
 		return;
 	}
 	
@@ -544,28 +509,28 @@ Dword SHMmu::accessP4()
 	switch(addr >> 16)
 	{
 	case 0x00: realAddr = (Dword) cpu->ccnRegs + (accessAddr & 0xff); break;
-	case 0x20: cpu->debugger->print("SHMmu:accessP4: UBC %08x\n", accessAddr); return 0;
-	case 0xC0: cpu->debugger->print("SHMmu:accessP4: WDT %08x\n", accessAddr); return 0;
-	case 0x80: return(tempData = cpu->bsc->hook(eventType, accessAddr, tempData));
-	case 0xA0: return(tempData = cpu->dmac->hook(eventType, accessAddr, tempData));
-	case 0xD0: return(tempData = cpu->intc->hook(eventType, accessAddr, tempData));
-	case 0xD8: return(tempData = cpu->tmu->hook(eventType, accessAddr, tempData));
+	case 0x20: return(tempData = ubc->hook(eventType, accessAddr, tempData));
+	case 0xC0: debugger->print("SHMmu:accessP4: WDT %08x (%08x)\n", accessAddr, tempData); return 0;
+	case 0x80: return(tempData = bsc->hook(eventType, accessAddr, tempData));
+	case 0xA0: return(tempData = dmac->hook(eventType, accessAddr, tempData));
+	case 0xD0: return(tempData = intc->hook(eventType, accessAddr, tempData));
+	case 0xD8: return(tempData = tmu->hook(eventType, accessAddr, tempData));
 	case 0xE0:
-	case 0xE8: return(tempData = cpu->sci->hook(eventType, accessAddr, tempData));
+	case 0xE8: return(tempData = sci->hook(eventType, accessAddr, tempData));
 	case 0x90:
-	case 0x94: return(tempData = cpu->bsc->hook(eventType, accessAddr, tempData)); 
-	case 0xC8: cpu->debugger->print("SHMmu:accessP4: RTC %08x\n", accessAddr); return 0;
-	default: cpu->debugger->flamingDeath("SHMmu:accessP4: Tried to access %08x, which I can't handle", accessAddr);
+	case 0x94: return(tempData = bsc->hook(eventType, accessAddr, tempData)); 
+	case 0xC8: debugger->print("SHMmu:accessP4: RTC %08x\n", accessAddr); return 0;
+	default: debugger->flamingDeath("SHMmu:accessP4: Tried to access %08x, which I can't handle", accessAddr);
 	}
     
 	switch(eventType)
 	{
 	case MMU_READ_DWORD: tempData = *((Dword*)(realAddr)); break;
+	case MMU_READ_BYTE:  tempData = *((Byte *)(realAddr)); break;
+	case MMU_READ_WORD:  tempData = *((Word *)(realAddr)); break;
 	case MMU_WRITE_DWORD: *((Dword*)(realAddr)) = tempData; break;
-	case MMU_READ_BYTE:	tempData = *((Byte*)(realAddr)); break;
-	case MMU_READ_WORD: tempData = *((Word*)(realAddr)); break;
-	case MMU_WRITE_BYTE: *((Byte*)(realAddr)) = (Byte) tempData; break;
-	case MMU_WRITE_WORD: *((Word*)(realAddr)) = (Word) tempData; break;
+	case MMU_WRITE_BYTE:  *((Byte *)(realAddr)) = (Byte) tempData; break;
+	case MMU_WRITE_WORD:  *((Word *)(realAddr)) = (Word) tempData; break;
 	}
 	return tempData;
 }
@@ -574,89 +539,105 @@ Dword SHMmu::accessP4()
 // accepts and returns data in this->tempData
 Dword SHMmu::access(Dword externalAddr, int accessType)
 {
-	Dword realAddr = 0;
-	
-	// TODO: check for exceptions
-	
-	// map to external memory
-	
-	// bits 31-29: specifies section of address space
-	// bits 28-26: area number within section
-	// bits 25-21: within area0:
-	//				0: boot ROM
-	//				1: flash
-	//				2: TA
-	//				3: SPU
-	//				4: SPU RAM
-	if((externalAddr >> 29) != 7)  { // if not in P4 
-		// handle different areas
-		switch((externalAddr >> 26) & 7) {
-		case 0: // boot ROM, flash, regs of things
-			switch((externalAddr >> 21) & 0x1f) {
-			case 0: realAddr = (Dword) bootRom + (externalAddr & 0x1fffff); break;
-			case 1: realAddr = (Dword) flash + (externalAddr & 0x3ffff); break;
-			case 2:
-				switch(externalAddr & 0xf000) {
-				case 0x8000: return(tempData = cpu->gpu->hook(eventType, accessAddr, tempData));
-				case 0x7000: return(tempData = cpu->modem->hook(eventType, accessAddr, tempData));
-				case 0x6000: 
-					switch(externalAddr&0xf00)
-					{ 
-					case 0x800: return (tempData = cpu->maple->g2Hook(eventType, accessAddr, tempData));
-					case 0x900: return (tempData = cpu->maple->asicHook(eventType, accessAddr, tempData));
-					case 0xc00: return (tempData = cpu->maple->mapleHook(eventType, accessAddr, tempData));
-					default: break; // fall through
-					}
-				default:
-					
-					if(accessType&MMU_READ)
-						cpu->debugger->print("SHMmu::access: can't handle read to external addr %08X, PC=%08X\n", externalAddr, cpu->PC);
-					if(accessType&MMU_WRITE)
-						cpu->debugger->print("SHMmu::access: can't handle write to external addr %08X, PC=%08X\n", externalAddr, cpu->PC);
-					cpu->debugger->flamingDeath("SHMMu:unhandled access to external address");
-					return 0xdeadbeef;
-				}
-				break;
-			case 3:
-				return(tempData = cpu->spu->hook(eventType, externalAddr, tempData));
-			case 4:
-				if((externalAddr & 0xffffff) == 0x0080ffc0) // XXX: this isn't very clean - checks for snd reg
-					return(tempData = cpu->spu->hook(eventType, externalAddr, tempData));
-				realAddr = (Dword) soundMem + (externalAddr & 0xfffff); break;
-			case 8: return 0;
-			}
-			break;
-		case 1: 
-			realAddr = (Dword) videoMem + (externalAddr & 0xffffff); 
-			break;
-		case 3: 
-			realAddr = (Dword) mem + (externalAddr & 0xffffff); 
-			break;
-		case 4: 
-			cpu->gpu->handleTaWrite(externalAddr, tempData); 
-			return 0; 
-			break;
-		case 7: // cache used as memory
-			if(accessAddr & 0x2000) // cache RAM area 2
-				realAddr = (externalAddr & 0xfff) | 0x1000;
-			else // RAM area 1
-				realAddr = externalAddr & 0xfff;
-			realAddr += (Dword) cache;
-			break;
-		}
-	} else // do P4 stuff
-		return accessP4();
-	
-	switch(accessType)
-	{
-	case MMU_READ_BYTE:	tempData = *((Byte*)(realAddr)); break;
-	case MMU_READ_WORD: tempData = *((Word*)(realAddr)); break;
-	case MMU_READ_DWORD: tempData = *((Dword*)(realAddr)); break;
-	    
-	case MMU_WRITE_BYTE: *((Byte*)(realAddr)) = (Byte) tempData; break;
-	case MMU_WRITE_WORD: *((Word*)(realAddr)) = (Word) tempData; break;
-	case MMU_WRITE_DWORD: *((Dword*)(realAddr)) = tempData; break;
-	}
+    Dword realAddr = 0;
 
-	return tempData;
+    // XXX: check for exceptions
+
+    if((externalAddr >> 29) != 7)  { // if not in P4 
+	// handle different areas
+	switch((externalAddr >> 26) & 7) {
+	case 0: // boot ROM, flash, regs of things
+	    switch((externalAddr >> 21) & 0x1f) {
+	    case 0: realAddr = (Dword) bootRom + (externalAddr & 0x1fffff); break;
+	    case 1: realAddr = (Dword) flash + (externalAddr & 0x3ffff); break;
+	    case 2:
+		switch(externalAddr & 0xf000) {
+		case 0x8000: return(tempData = gpu->hook(eventType, accessAddr, tempData));
+		case 0x7000: 
+		    switch(externalAddr&0xf00) 
+		    {
+		    case 0x000: return (tempData = maple->unknownHook(eventType, accessAddr, tempData));
+		    default: break;
+		    }
+		    // 4e4 is cdrom register -- has size of whatever is going to be read
+		case 0x6000: 
+		    switch(externalAddr&0xf00)
+		    { 
+		    case 0x400: return (tempData = modem->hook(eventType, accessAddr, tempData));
+		    case 0x800: return (tempData = maple->g2Hook(eventType, accessAddr, tempData));
+		    case 0x900: return (tempData = maple->asicHook(eventType, accessAddr, tempData));
+		    case 0xc00: return (tempData = maple->mapleHook(eventType, accessAddr, tempData));
+		    default: break; // fall through
+		    }
+		default:
+		    
+		    if(accessType&MMU_READ)
+			debugger->print("SHMmu::access: can't handle read to external addr %08X, PC=%08X\n", externalAddr, cpu->PC);
+		    if(accessType&MMU_WRITE)
+			debugger->print("SHMmu::access: can't handle write to external addr %08X, PC=%08X\n", externalAddr, cpu->PC);
+		    debugger->flamingDeath("SHMMu:unhandled access to external address");
+		    return 0xdeadbeef;
+		}
+		break;
+	    case 3:
+		return(tempData = spu->hook(eventType, externalAddr, tempData));
+	    case 4:
+		// 0x10000000 to 0x13000000
+
+		// XXX: not sure about this... 
+		switch(externalAddr>>24)
+		{
+		case 0: // SPU RAM
+		    //if((externalAddr & 0xffffff) == 0x0080ffc0) // XXX: this isn't very clean - checks for snd reg
+		    //return(tempData = spu->hook(eventType, externalAddr, tempData));
+		    
+		    realAddr = (Dword) soundMem + (externalAddr & 0x1fffff); 
+		    break;
+		case 1: // texture RAM
+
+		    printf("access tex ram at %08x\n", externalAddr);
+
+		    realAddr = (Dword) texMem + (externalAddr & 0x00ffffff);
+		    break;
+		default: 
+		    printf("SHMmu::access: unknown addr at %08x\n", externalAddr);
+		}
+
+		break;
+	    case 8: return 0;
+	    }
+	    break;
+	case 1: 
+	    realAddr = (Dword) videoMem + (externalAddr & 0xffffff); 
+	    break;
+	case 3: 
+	    realAddr = (Dword) mem + (externalAddr & 0xffffff); 
+	    break;
+	case 4: 
+	    gpu->handleTaWrite(externalAddr, tempData); 
+	    return 0; 
+	    break;
+	case 7: // cache used as memory
+	    if(accessAddr & 0x2000) // cache RAM area 2
+		realAddr = (externalAddr & 0xfff) | 0x1000;
+	    else // RAM area 1
+		realAddr = externalAddr & 0xfff;
+	    realAddr += (Dword) cache;
+	    break;
+	}
+    } else // do P4 stuff
+	return accessP4();
+    
+    switch(accessType)
+    {
+    case MMU_READ_BYTE:	 tempData = *((Byte*)(realAddr)); break;
+    case MMU_READ_WORD:  tempData = *((Word*)(realAddr)); break;
+    case MMU_READ_DWORD: tempData = *((Dword*)(realAddr)); break;
+	
+    case MMU_WRITE_BYTE:  *((Byte*)(realAddr)) = (Byte) tempData; break;
+    case MMU_WRITE_WORD:  *((Word*)(realAddr)) = (Word) tempData; break;
+    case MMU_WRITE_DWORD: *((Dword*)(realAddr)) = tempData; break;
+    }
+    
+    return tempData;
 }

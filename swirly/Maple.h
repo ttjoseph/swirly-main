@@ -2,7 +2,6 @@
 #define _MAPLE_H_
 
 #include "swirly.h"
-#include "SHCpu.h"
 #include "Controller.h"
 
 // commands
@@ -35,6 +34,13 @@
 #define MAPLE_SPEED_ADDR  0x80
 #define MAPLE_ENABLE_ADDR 0x14
 
+#define DMA_STATE 0x00
+#define DMA_LEN   0x04
+#define DMA_DST   0x08 // has to be cleared after dma transfer
+
+#define LMMODE0   0x84
+#define LMMODE1   0x88
+
 class Maple 
 {
 
@@ -42,25 +48,36 @@ class Maple
 	
 	struct FrameHeader 
 	{
-		Byte command;
-		Byte recipient;
-		Byte sender;
-		Byte numWordsFollowing;
+	    Byte command;
+	    Byte recipient;
+	    Byte sender;
+	    Byte numWordsFollowing;
 	};
     
-	Maple(class SHCpu *cpu, Dword setting);
+
+	Maple(Dword setting);
 	virtual ~Maple();
 	
 	Dword mapleHook(int eventType, Dword addr, Dword data);
 	Dword asicHook(int eventType, Dword addr, Dword data);
 	Dword g2Hook(int eventType, Dword addr, Dword data);
+	Dword unknownHook(int eventType, Dword addr, Dword data);
+	
+	void setAsicA(int bit);
 
-	class SHCpu *cpu;
 	class Controller *controller;
 	
-	Dword asic9a;
-	Dword asicAckA;
+	Dword asic9a, asic9b, asic9c;
+	Dword asicBa, asicBb, asicBc;
+	Dword asicDa, asicDb, asicDc;
+	Dword asicAckA, asicAckB, asicAckC;
+
+
 	Dword g2Fifo;
+
+	Dword dmaDestAddr;
+	Dword dmaCount;
+	Dword dmaRepeat;
 	
  private:
 	Maple() {}

@@ -3,6 +3,23 @@
 
 #define VERSION_STRING "Swirly beta"
 
+extern class SHCpu *cpu;
+extern class SHMmu *mmu;
+extern class SHTmu *tmu;
+extern class SHBsc *bsc;
+extern class SHUbc *ubc;
+extern class SHSci *sci;
+extern class SHDmac *dmac;
+extern class SHIntc *intc;
+
+extern class Overlord *overlord;
+extern class Debugger *debugger;
+extern class Modem *modem;
+extern class Gdrom *gdrom;
+extern class Maple *maple;
+extern class Gpu *gpu;
+extern class Spu *spu;
+
 typedef unsigned char Byte;  // 8 bits
 typedef signed char Sbyte;   // 8 bits
 typedef unsigned short Word; // 16 bits

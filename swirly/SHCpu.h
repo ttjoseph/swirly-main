@@ -1,48 +1,18 @@
-// SHCpu.h: interface for the SHCpu class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #ifndef _SHCPU_H_
 #define _SHCPU_H_
 
 #include "swirly.h"
-#include "Debugger.h"
-#include "SHMmu.h"
-#include "SHTmu.h"
-#include "SHBsc.h"
-#include "SHSci.h"
-#include "SHDmac.h"
-#include "SHIntc.h"
-#include "Gpu.h"
-#include "Modem.h"
-#include "Spu.h"
-#include "Gdrom.h"
-#include "Maple.h"
-#include "Overlord.h"
-
-#include <stdio.h>
-#include <math.h>
 
 // utility macros
 #define getM(a) (((Word)a >> 4) & 0xf)
 #define getN(a) (((Word)a >> 8) & 0xf)
 #define getI(a) ((Word)a & 0xff)
+
 // these next two only work on byte values!!
 #define BCD(n) ((n % 10) | ((n/10) << 4))
 #define PACKED(n) ((n&0xf) + (10*(n>>4)))
 
-// used in FPU instructions
-#define FPU_DP_FIX_M() if(FPSCR & F_FPSCR_PR) m>>=1
-#define FPU_DP_FIX_N() if(FPSCR & F_FPSCR_PR) n>>=1
-#define FPU_DP_FIX_MN() if(FPSCR & F_FPSCR_PR) { m >>= 1; n>>=1; }
-#define FPU_DP() (FPSCR & F_FPSCR_PR)
-#define FPU_SZ_FIX_M() if(FPSCR & F_FPSCR_SZ) m>>=1
-#define FPU_SZ_FIX_N() if(FPSCR & F_FPSCR_SZ) n>>=1
-#define FPU_SZ_FIX_MN() if(FPSCR & F_FPSCR_SZ) { m >>= 1; n>>=1; }
-#define FPU_SZ() (FPSCR & F_FPSCR_SZ)
-
-// Flags
-// these are named like so: F_[regname]_[flagname]
+// flags: F_[regname]_[flagname]
 #define F_SR_MD 0x40000000
 #define F_SR_RB 0x20000000
 #define F_SR_BL 0x10000000
@@ -52,34 +22,45 @@
 #define F_SR_S  0x00000002
 #define F_SR_T  0x00000001
 
-#define F_FPSCR_PR 0x00080000
-#define F_FPSCR_DN 0x00040000
-#define F_FPSCR_SZ 0x00100000
-#define F_FPSCR_FR 0x00200000
-
 // makes it easier to access bits in SR
 #define M (((struct SR_t *)(&SR))->M0)
 #define Q (((struct SR_t *)(&SR))->Q0)
 #define S (((struct SR_t *)(&SR))->S0)
 #define T (((struct SR_t *)(&SR))->T0)
 
-// exception codes
-#define E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION 0x1e0
-#define E_INSTRUCTION_ADDRESS_ERROR             0x0e0
-#define E_INSTRUCTION_TLB_MISS                  0x040
-#define E_INSTRUCTION_TLB_PROTECTION_VIOLATION  0x0a0
-#define E_GENERAL_ILLEGAL_INSTRUCTION           0x180
-#define E_SLOT_ILLEGAL_INSTRUCTION              0x1a0
-#define E_GENERAL_FPU_DISABLE                   0x800
-#define E_SLOT_FPU_DISABLE                      0x820
-#define E_DATA_ADDRESS_ERROR_READ               0x0e0
-#define E_DATA_ADDRESS_ERROR_WRITE              0x100
-#define E_DATA_TLB_MISS_READ                    0x040
-#define E_DATA_TLB_MISS_WRITE                   0x060
-#define E_DATA_TLB_PROTECTION_VIOLATION_READ    0x0a0
-#define E_DATA_TLB_PROTECTION_VIOLATION_WRITE   0x0c0
-#define E_FPU					0x120
-#define E_INITAL_PAGE_WRITE			0x080
+#define FPU_DP_FIX_M() if(FPSCR & F_FPSCR_PR) m>>=1
+#define FPU_DP_FIX_N() if(FPSCR & F_FPSCR_PR) n>>=1
+#define FPU_DP_FIX_MN() if(FPSCR & F_FPSCR_PR) { m >>= 1; n>>=1; }
+#define FPU_DP() (FPSCR & F_FPSCR_PR)
+#define FPU_SZ_FIX_M() if(FPSCR & F_FPSCR_SZ) m>>=1
+#define FPU_SZ_FIX_N() if(FPSCR & F_FPSCR_SZ) n>>=1
+#define FPU_SZ_FIX_MN() if(FPSCR & F_FPSCR_SZ) { m >>= 1; n>>=1; }
+#define FPU_SZ() (FPSCR & F_FPSCR_SZ)
+
+#define F_FPSCR_PR 0x00080000
+#define F_FPSCR_DN 0x00040000
+#define F_FPSCR_SZ 0x00100000
+#define F_FPSCR_FR 0x00200000
+
+#define F_FPSCR_E  0x00020000
+#define F_FPSCR_V  0x00010040
+#define F_FPSCR_Z  0x00008020
+#define F_FPSCR_O  0x00004010
+#define F_FPSCR_U  0x00002008
+#define F_FPSCR_I  0x00001004
+
+#define F_CAUSE    0x0003f000
+
+#define F_ENABLE_V 0x00000800
+
+#define CLEAR_CAUSE() FPSCR &= ~F_CAUSE
+
+typedef union {
+	double d;
+	unsigned int i[2];
+} cnv_dbl;
+
+typedef unsigned long long Qword;
 
 // functions in shfpu.s
 extern "C"
@@ -90,32 +71,19 @@ void shfpu_sFLOAT();
 void shfpu_sFMUL();
 }
 
-typedef union {
-	double d;
-	unsigned int i[2];
-} cnv_dbl;
-
-typedef struct
-{
-	void (SHCpu::*opcode_handler)(Word);        /* handler function */
-	Word mask;                  /* mask on opcode */
-	Word match;                 /* what to match after masking */
-} opcode_handler_struct;
-
 class SHCpu
 {
 public:
-	void go();
+        void go();
 	void go_rec();
-	void exception(Dword type, Dword addr, Dword data, char *datadesc = 0);
-	void executeInstruction(Word d);
 	void reset();
 	void delaySlot();
-	SHCpu(Dword setting);
+	SHCpu();
 	virtual ~SHCpu();
 	void setSR(Dword d);
+	void executeInstruction(Word d);
 
-	Word currInstruction;
+        Word currInstruction;
 
 	Dword *R, *RBANK, RBANK0[16], RBANK1[16], SR, GBR, VBR, MACH, MACL, PR, PC,
 	SPC, DBR, SSR, SGR, *FR_Dwords, *XF_Dwords;
@@ -126,23 +94,7 @@ public:
 	double *DR, *XD;
 
 	Byte ccnRegs[1024]; // XXX: is this the best way to do this?
-	int exceptionsPending;
 	Dword numIterations;
-
-	class SHMmu *mmu;
-	class SHTmu *tmu;
-	class SHBsc *bsc;
-	class SHSci *sci;
-	class SHDmac *dmac;
-	class SHIntc *intc;
-	class Debugger *debugger;
-	class Gpu *gpu;
-	class Gdrom *gdrom;
-	class Spu *spu;
-	class Maple *maple;
-	class Modem *modem;
-
-	class Overlord *overlord;
 
 	// This is used to make accessing SR flags easier.
 	// XXX: This could be very compiler-dependent.  Is the order of the
@@ -159,9 +111,11 @@ public:
 			foo0:22;
 	};
 
-	void checkInterrupt();
-	void addInterrupt(Dword at, Dword type);
+    
+	void (SHCpu::*sh_instruction_jump_table[0x10000])(Word);
+	void (SHCpu::*sh_recompile_jump_table[0x10000])();
 
+#if 0
 	Dword recPC;
 	char* recMem;
 	char* recRAM;
@@ -175,45 +129,11 @@ public:
 	void recBranch(Word op);
 	void recNOP(Word op);
 	void recMOV(Word op);
+#endif
 
 public:	// Needs to be public
 	void dispatchSwirlyHook(Word op);
 	void unknownOpcode(Word op);
-	// XXX: I don't trust these FP instructions yet.
-	void FSCA(Word op);
-	void FSRRA(Word op);
-	void FTRV(Word op);
-	void FTRC(Word op);
-	void FSUB(Word op);
-	void FSTS(Word op);
-	void FSQRT(Word op);
-	void FSCHG(Word op);
-	void FRCHG(Word op);
-	void FNEG(Word op);
-	void FMAC(Word op);
-	void FLOAT(Word op);
-	void FLDS(Word op);
-	void FLDI1(Word op);
-	void FLDI0(Word op);
-	void FDIV(Word op);
-	void FCNVSD(Word op);
-	void FCNVDS(Word op);
-	void FCMPGT(Word op);
-	void FCMPEQ(Word op);
-	void FMOV_INDEX_STORE(Word op);
-	void FMOV_INDEX_LOAD(Word op);
-	void FMOV_SAVE(Word op);
-	void FMOV_RESTORE(Word op);
-	void FMOV_LOAD(Word op);
-	void FMOV_STORE(Word op);
-	void FMOV(Word op);
-	void FMUL(Word op);
-	void setFPSCR(Dword d);
-	void FADD(Word op);
-	void FABS(Word op);
-	void LDSFPUL(Word op);
-	void LDSMFPSCR(Word op);
-	void LDSMFPUL(Word op);
 
 	// the non-FP instructions
 	void ADD(Word op);
@@ -390,7 +310,51 @@ public:	// Needs to be public
 	void XORM(Word op);
 	void XORI(Word op);
 	void XOR(Word op);
-	void XTRCT(Word op);
+	void XTRCT(Word op);	
+
+	// fp instructions
+	int test_pinf(int n);
+	int test_ninf(int n);
+	int test_snan(int n);
+	int test_qnan(int n);
+	int test_denorm(int n);
+	void invalid(int n);
+	void qnan(int n);
+
+	void FSCA(Word op);
+	void FSRRA(Word op);
+	void FTRV(Word op);
+	void FTRC(Word op);
+	void FSUB(Word op);
+	void FSTS(Word op);
+	void FSQRT(Word op);
+	void FSCHG(Word op);
+	void FRCHG(Word op);
+	void FNEG(Word op);
+	void FMAC(Word op);
+	void FLOAT(Word op);
+	void FLDS(Word op);
+	void FLDI1(Word op);
+	void FLDI0(Word op);
+	void FDIV(Word op);
+	void FCNVSD(Word op);
+	void FCNVDS(Word op);
+	void FCMPGT(Word op);
+	void FCMPEQ(Word op);
+	void FMOV_INDEX_STORE(Word op);
+	void FMOV_INDEX_LOAD(Word op);
+	void FMOV_SAVE(Word op);
+	void FMOV_RESTORE(Word op);
+	void FMOV_LOAD(Word op);
+	void FMOV_STORE(Word op);
+	void FMOV(Word op);
+	void FMUL(Word op);
+	void setFPSCR(Dword d);
+	void FADD(Word op);
+	void FABS(Word op);
+	void LDSFPUL(Word op);
+	void LDSMFPSCR(Word op);
+	void LDSMFPUL(Word op);
 };
 
 #endif

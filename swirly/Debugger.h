@@ -16,8 +16,7 @@ public:
 	void checkMemBp(Dword addr);
 	bool prompt();
 	void dumpRegs();
-	void flamingDeath(char *fmt, ...);
-	Debugger(class SHCpu *cpu);
+	Debugger();
 	virtual ~Debugger();
 	bool dispatchCommand(char *cmd);
 	char* getExceptionName(int exception);
@@ -25,11 +24,13 @@ public:
 	void reportBranch(char *tag, Dword src, Dword dest);
 	void print(char *fmt, ...);
 	bool runScript(char *fname);
+	void Debugger::flamingDeath(char *fmt, ...);
 
-	bool promptOn, showStatusMessages;
+	void printTexInfo(int num);
+
+	bool promptOn, showStatusMessages, showFP;
 
 private:
-	Debugger() {}
 
 	void updateMaxBp(int type, int *max);
 	bool memBpSet;
@@ -43,7 +44,6 @@ private:
 		bool valid;
 	};
 
-	class SHCpu *cpu;
 	Breakpoint *breakpoints;
 	FILE *branchTraceFile;
 	char path[255];
@@ -53,6 +53,7 @@ private:
 	void getToken(char *s, int tokennum, char *putwhere);
 	int scanTillBlackspace(char *s);
 
+	bool cmdTex(char *cmd);
 	bool cmdPath(char *cmd);
 	bool cmdTrb(char *cmd);
 	bool cmdU(char *cmd);
@@ -73,6 +74,8 @@ private:
 	bool cmdF(char *cmd);
 	bool cmdL(char *cmd);
 	bool cmdS(char *cmd);
+	bool cmdFP(char *cmd);
+	bool cmdI(char *cmd);
 
 };
 

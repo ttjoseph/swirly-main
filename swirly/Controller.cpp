@@ -1,116 +1,116 @@
 #include "Controller.h"
 #include <string.h>
+#include <SDL/SDL.h>
 
 Controller::Controller(Maple *maple, Dword setting) 
 {
-	// key repeat enable
-	SDL_EnableKeyRepeat(250, 30);
+    // key repeat enable
+    SDL_EnableKeyRepeat(250, 30);
+    
+    if(setting) 
+    {
+	// configure for keyboard/mouse
 	
-	if(setting) 
-	{
-		// configure for keyboard/mouse
+	// XXX: standbyPower and maxPower for a real keyboard?
+	strcpy(devices[0].productName, "Swirly Fake Keyboard");
+	strcpy(devices[0].productLicense, "Unknown");
+	devices[0].suppFuncs = switchEndian(MAPLE_KEYBOARD);
+	devices[0].region = 0xff;
+	devices[0].connectorDirection = 0;
+	devices[0].standbyPower = 0x01ae; 
+	devices[0].maxPower = 0x01f4;
+	// maple-specific information
+	deviceSize[0] = 4;
+	deviceData[0] = keyboard;
+	
+	// XXX: standbyPower and maxPower for a real mouse?
+	strcpy(devices[1].productName, "Swirly Fake Mouse");
+	strcpy(devices[1].productLicense, "Unknown");
+	devices[1].suppFuncs = switchEndian(MAPLE_MOUSE);
+	devices[1].region = 0xff;
+	devices[1].connectorDirection = 0;
+	devices[1].standbyPower = 0x01ae; 
+	devices[1].maxPower = 0x01f4;
+	// maple-specific information
+	deviceSize[1] = 6;
+	deviceData[1] = mouse;
+	
+	devices[2].suppFuncs = 0;
+	devices[3].suppFuncs = 0;
+	
+	updateInput = &Controller::updateKeyboardMouse;
+	
+    } 
+    else 
+    {
 
-		// XXX: standbyPower and maxPower for a real keyboard?
-		strcpy(devices[0].productName, "Swirly Fake Keyboard");
-		strcpy(devices[0].productLicense, "Unknown");
-		devices[0].suppFuncs = switchEndian(MAPLE_KEYBOARD);
-		devices[0].region = 0xff;
-		devices[0].connectorDirection = 0;
-		devices[0].standbyPower = 0x01ae; 
-		devices[0].maxPower = 0x01f4;
-		// maple-specific information
-		deviceSize[0] = 4;
-		deviceData[0] = keyboard;
-		
-		// XXX: standbyPower and maxPower for a real mouse?
-		strcpy(devices[1].productName, "Swirly Fake Mouse");
-		strcpy(devices[1].productLicense, "Unknown");
-		devices[1].suppFuncs = switchEndian(MAPLE_MOUSE);
-		devices[1].region = 0xff;
-		devices[1].connectorDirection = 0;
-		devices[1].standbyPower = 0x01ae; 
-		devices[1].maxPower = 0x01f4;
-		// maple-specific information
-		deviceSize[1] = 6;
-		deviceData[1] = mouse;
-		
-		devices[2].suppFuncs = 0;
-		devices[3].suppFuncs = 0;
-		
-		updateInput = &Controller::updateKeyboardMouse;
-		
-	} 
-	else 
-	{
-
-		// configure for a controller + VMU
-		
-		// XXX: should be:
-		// A0: Dreamcast Controller (01000000: Controller)
-		// A1: Visual Memory        (0e000000: Clock, LCD, MemoryCard)
-		
-		strcpy(devices[0].productName, "Swirly Dreamcast Controller");
-		strcpy(devices[0].productLicense, "Unknown");
-		devices[0].suppFuncs = switchEndian(MAPLE_CONTROLLER);
-		// parameters taken from a real DC controller
-		devices[0].region = 0xff;
-		devices[0].connectorDirection = 0;
-		devices[0].standbyPower = 0x01ae; 
-		devices[0].maxPower = 0x01f4; 
-		
-		// maple-specific information
-		deviceSize[0] = 3;
-		deviceData[0] = controller;
-		
+	// configure for a controller + VMU
+	
+	// XXX: should be:
+	// A0: Dreamcast Controller (01000000: Controller)
+	// A1: Visual Memory        (0e000000: Clock, LCD, MemoryCard)
+	
+	strcpy(devices[0].productName, "Swirly Dreamcast Controller");
+	strcpy(devices[0].productLicense, "Unknown");
+	devices[0].suppFuncs = switchEndian(MAPLE_CONTROLLER);
+	// parameters taken from a real DC controller
+	devices[0].region = 0xff;
+	devices[0].connectorDirection = 0;
+	devices[0].standbyPower = 0x01ae; 
+	devices[0].maxPower = 0x01f4; 
+	
+	// maple-specific information
+	deviceSize[0] = 3;
+	deviceData[0] = controller;
+	
 #if 0
-		strcpy(devices[1].productName, "Swirly Visual Memory");
-		strcpy(devices[1].productLicense, "Unknown");
-		devices[1].suppFuncs = switchEndian(MAPLE_MEMCARD | MAPLE_LCD | MAPLE_CLOCK);
-		// parameters taken from a real VMU
-		devices[1].region = 0xff;
-		devices[1].connectorDirection = 0;
-		devices[1].standbyPower = 0x007c; 
-		devices[1].maxPower = 0x0082; 
-		
-		deviceSize[1] = 0; 
+	strcpy(devices[1].productName, "Swirly Visual Memory");
+	strcpy(devices[1].productLicense, "Unknown");
+	devices[1].suppFuncs = switchEndian(MAPLE_MEMCARD | MAPLE_LCD | MAPLE_CLOCK);
+	// parameters taken from a real VMU
+	devices[1].region = 0xff;
+	devices[1].connectorDirection = 0;
+	devices[1].standbyPower = 0x007c; 
+	devices[1].maxPower = 0x0082; 
+	
+	deviceSize[1] = 0; 
 #else
-		devices[1].suppFuncs = 0;
+	devices[1].suppFuncs = 0;
 #endif
-		
-		devices[2].suppFuncs = 0;
-		devices[3].suppFuncs = 0;
-		
-		updateInput = &Controller::updateJoystick;
-		
-		// ignore mouse since we only emulate a controller
-		SDL_EventState(SDL_MOUSEMOTION, SDL_IGNORE);
-	}
+	
+	devices[2].suppFuncs = 0;
+	devices[3].suppFuncs = 0;
+	
+	updateInput = &Controller::updateJoystick;
+	
+	// ignore mouse since we only emulate a controller
+	SDL_EventState(SDL_MOUSEMOTION, SDL_IGNORE);
+    }
 }
 
 Controller::~Controller() {}
 
 struct Controller::DeviceInfo *Controller::returnInfo(Dword port) 
 {
-	return devices+((port>>6)&3);
+    return devices+((port>>6)&3);
 }
 
 int Controller::returnSize(Dword port) 
 {
-	return deviceSize[(port>>6)&3];
+    return deviceSize[(port>>6)&3];
 }
 
 Dword *Controller::returnData(Dword port) {
-	return deviceData[(port>>6)&3];
+    return deviceData[(port>>6)&3];
 }
 
 void Controller::checkInput() 
 {
-	(this->*updateInput)();
+    (this->*updateInput)();
 }
 
 void Controller::updateKeyboardMouse() 
 {
-
 	// XXX: not all keys are 'emulated' and we only process a key at a time
 
 	keyboard[0] = keyboard[1] = 0;
@@ -157,7 +157,6 @@ void Controller::updateKeyboardMouse()
 
 void Controller::updateJoystick() 
 {
-
 	static bool lctrlPressed = false;
 	static Byte up, down, left, right; 
 

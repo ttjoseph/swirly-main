@@ -38,47 +38,47 @@ class Controller
 {
 
  public:
-	Controller(class Maple *maple, Dword setting);
-	~Controller();    
+    Controller(class Maple *maple, Dword setting);
+    ~Controller();    
 	
-	void Controller::checkInput();
-	
-	// This struct copied almost verbatim from http://mc.pp.se/dc/maplebus.html
-	// Thank you Marcus Comstedt!
-	struct DeviceInfo {
-		Dword suppFuncs;         // func codes supported - big endian
-		Dword funcData[3];       // info about func codes - big endian
-		Byte region;             // peripheral's region code
-		Byte connectorDirection; // ?? that's odd
-		char productName[30];
-		char productLicense[60];
-		Word standbyPower;       // standby power consumption - little endian
-		Word maxPower;           // maximum power consumption - little endian
-	};
-	
-	struct DeviceInfo *returnInfo(Dword port);
-	int returnSize(Dword port);
-	Dword *returnData(Dword port);
-	
+    void Controller::checkInput();
+    
+    // This struct copied almost verbatim from http://mc.pp.se/dc/maplebus.html
+    // Thank you Marcus Comstedt!
+    struct DeviceInfo {
+	Dword suppFuncs;         // func codes supported - big endian
+	Dword funcData[3];       // info about func codes - big endian
+	Byte region;             // peripheral's region code
+	Byte connectorDirection; // ?? that's odd
+	char productName[30];
+	char productLicense[60];
+	Word standbyPower;       // standby power consumption - little endian
+	Word maxPower;           // maximum power consumption - little endian
+    };
+    
+    struct DeviceInfo *returnInfo(Dword port);
+    int returnSize(Dword port);
+    Dword *returnData(Dword port);
+    
  private:
-	Controller();
+    Controller();
 	
-	void (Controller::*updateInput)();
-	void updateKeyboardMouse();
-	void updateJoystick();
+    void (Controller::*updateInput)();
+    void updateKeyboardMouse();
+    void updateJoystick();
+    
+    class Maple *maple;
+    
+    struct DeviceInfo devices[4];
+    int deviceSize[4];
 	
-	class Maple *maple;
-	
-	struct DeviceInfo devices[4];
-	int deviceSize[4];
-	
-	// peripheral-specific button data minus 2 dwords of maple header
-	// information (e.g., frame header and identification)
-	Dword keyboard[2];
-	Dword mouse[6];
-	Dword controller[2];
-	
-	Dword *deviceData[4];
+    // peripheral-specific button data minus 2 dwords of maple header
+    // information (e.g., frame header and identification)
+    Dword keyboard[2];
+    Dword mouse[6];
+    Dword controller[2];
+    
+    Dword *deviceData[4];
 };
 
 #endif

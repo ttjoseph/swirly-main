@@ -1,25 +1,7 @@
-// SHMmu.h: interface for the SHMmu class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #ifndef _SHMMU_H_
 #define _SHMMU_H_
 
 #include "swirly.h"
-#include "SHCpu.h"
-
-/*
-  0x00000000 - 0x03ffffff         0x00000000 - 0x001fffff Boot ROM (2MB)
-                                  0x00200000 - 0x003fffff Flash ROM (256K)
-  0x04000000 - 0x07ffffff         Video RAM (8MB)
-  0x08000000 - 0x0bffffff         ?
-  0x0c000000 - 0x0fffffff         System RAM (16MB)
-  0x10000000 - 0x13ffffff         PowerVR
-  0x10000000 - 0x107fffff         Tile accelerator
-  0x10800000 - 0x11ffffff         Texture mem (wronly)    24 mb
-  0xa0800000 - 0xa09fffff         Sound RAM (2MB)
-
-*/
 
 // boot rom  -- 2 mb   repeated 
 // flash rom -- 256 kb repeated
@@ -28,12 +10,13 @@
 // tex mem   -- 8 mb   repeated
 // sound mem -- 2 mb   repeated
 
-#define MMU_DEFAULT_MEM_SIZE 16777216
-#define MMU_CACHE_SIZE 8192
-#define MMU_FLASH_SIZE 262144
-#define MMU_VIDEOMEM_SIZE 0x1000000 // this is actually texture memory
-#define MMU_BOOTROM_SIZE (1048576 * 2)
-#define MMU_SOUNDMEM_SIZE (1048576 * 2)
+#define MMU_CACHE_SIZE       (8*1024)
+#define MMU_FLASH_SIZE       (256*1024)
+#define MMU_BOOTROM_SIZE     (2*1024*1024)
+#define MMU_SOUNDMEM_SIZE    (2*1024*1024)
+#define MMU_TEXMEM_SIZE      (8*1024*1024)
+#define MMU_VIDEOMEM_SIZE    (16*1024*1024) // XXX: this is wrong: we need to implement interleaved video 
+#define MMU_DEFAULT_MEM_SIZE (16*1024*1024)
 
 // values used internally for SHMmu::eventType
 #define MMU_READ 0x0100
@@ -76,12 +59,12 @@ public:
 	Dword access(Dword externalAddr, int accessType);
 	void storeQueueSend(Dword target);
 	void ldtlb();
-	void setSR(Dword d);
+
 	Float readFloat(Dword addr);
 	Double readDouble(Dword addr);
 	void writeFloat(Dword addr, Float d);
 	void writeDouble(Dword addr, Double d);
-	Word fetchInstruction(Dword addr);
+        Word fetchInstruction(Dword addr);
 	void writeDword(Dword addr, Dword d);
 	void writeDwordToExternal(Dword addr, Dword d);
 	void writeWord(Dword addr, Word d);
@@ -89,15 +72,13 @@ public:
 	Dword readDword(Dword addr);
 	Word readWord(Dword addr);
 	Byte readByte(Dword addr);
-	SHMmu(class SHCpu *cpu);
+	SHMmu();
 	virtual ~SHMmu();
 
-	class SHCpu *cpu;
-	Byte *mem, *cache, *flash, *videoMem, *bootRom, *soundMem;
+	Byte *mem, *cache, *flash, *videoMem, *bootRom, *soundMem, *texMem;
 	class xMMUException {};
 
 private:
-  SHMmu() {}
 
 	int searchItlb(Dword addr);
 	void updateMmucrUrc();

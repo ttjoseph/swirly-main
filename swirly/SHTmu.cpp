@@ -1,15 +1,12 @@
-// SHTmu.cpp: implementation of the SH4 TMU.
-//
-// This is by no means complete, or even correct!
-//////////////////////////////////////////////////////////////////////
+#include <string.h>
 
 #include "SHTmu.h"
 #include "SHIntc.h"
-#include <string.h>
+#include "SHCpu.h"
+#include "SHMmu.h"
 
-SHTmu::SHTmu(SHCpu *cpu)
+SHTmu::SHTmu()
 {
-	this->cpu = cpu;
 	reset();
 }
 
@@ -22,11 +19,11 @@ void SHTmu::updateTCNT0()
 {
 	if(TSTR & 0x1) {
 		if (TCR0 & 0x20) {
-			cpu->intc->internalInt(TMU0, 0x400);
+			intc->internalInt(TMU0, 0x400);
 		}							
 		TCR0 |= 0x100; // turn on TCRx.UNF
 		TCNT0 = TCOR0;
-		cpu->addInterrupt(TCNT0 << 2, 2);
+		intc->addInterrupt(TCNT0 << 2, 2);
 	}
 }
 
@@ -34,11 +31,11 @@ void SHTmu::updateTCNT1()
 {
 	if(TSTR & 0x2) {
 		if (TCR1 & 0x20) {
-			cpu->intc->internalInt(TMU1, 0x420);
+			intc->internalInt(TMU1, 0x420);
 		}	
 		TCR1 |= 0x100; // turn on TCRx.UNF
 		TCNT1 = TCOR1;
-		cpu->addInterrupt(TCNT1 << 4, 3);
+		intc->addInterrupt(TCNT1 << 4, 3);
 	}
 }
 
@@ -47,7 +44,7 @@ void SHTmu::updateTCNT1()
 // registers are accessed, which hook() does automatically.
 void SHTmu::update()
 {
-	currTicks = SDL_GetTicks();
+    //currTicks = SDL_GetTicks();
 #if 0
 #define UPDATETIMER(a, b, c, d) if(TSTR & c) a = d - (delta * (ticks - b))
 	UPDATETIMER(TCNT0, tcnt0StartTime, D0, TCOR0);
@@ -110,12 +107,12 @@ Dword SHTmu::hook(int event, Dword addr, Dword data)
 		if (data & 0x1)  {
 			//printf("Timer 0 started: %08x\n", TCNT0);
 			tcnt0StartTime = cpu->numIterations;
-			cpu->addInterrupt(TCNT0 << 2, 2);
+			intc->addInterrupt(TCNT0 << 2, 2);
 		}
 		if (data & 0x2)  {
 			//printf("Timer 1 started\n");
 			tcnt1StartTime = cpu->numIterations;
-			cpu->addInterrupt(TCNT1 << 4, 3);
+			intc->addInterrupt(TCNT1 << 4, 3);
 		}
 
 	}

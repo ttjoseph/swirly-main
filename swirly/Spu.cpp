@@ -1,21 +1,11 @@
-// Spu.cpp: implementation of the Spu class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #include "Spu.h"
 #include "SHCpu.h"
 #include <stdio.h>
 #include <time.h>
 
-Spu::Spu(class SHCpu *cpu)
-{
-	this->cpu = cpu;
-}
+Spu::Spu() {}
 
-Spu::~Spu()
-{
-
-}
+Spu::~Spu() {}
 
 Dword Spu::hook(int eventType, Dword addr, Dword data)
 {

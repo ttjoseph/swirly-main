@@ -1,28 +1,13 @@
-// SHSci.cpp: implementation of the SHSci class.
-//
-// This is a quick hack.  Ignores a bunch of stuff.
-// This is supposed to be both the SCI and SCIF.
-//////////////////////////////////////////////////////////////////////
-
 #include "SHSci.h"
+#include "Debugger.h"
+#include "SHMmu.h"
 
 #define REG_READ 1000
 #define REG_WRITE 1001
 
-//////////////////////////////////////////////////////////////////////
-// Construction/Destruction
-//////////////////////////////////////////////////////////////////////
+SHSci::SHSci() {}
 
-SHSci::SHSci(SHCpu *cpu)
-{
-	this->cpu = cpu;
-
-}
-
-SHSci::~SHSci()
-{
-
-}
+SHSci::~SHSci() {}
 
 Dword SHSci::hook(int event, Dword addr, Dword data)
 {
@@ -41,7 +26,7 @@ Dword SHSci::hook(int event, Dword addr, Dword data)
 		return accessReg(REG_WRITE, addr, data);
 		
 	default:
-		cpu->debugger->flamingDeath("Weird parameter passed to SHSci::hook!");
+		debugger->flamingDeath("Weird parameter passed to SHSci::hook!");
 		return 0; // we never get here
 	}
 }
@@ -97,7 +82,7 @@ Dword SHSci::accessReg(int operation, Dword addr, Dword data)
 		}
 		return 0;
 	default:
-		cpu->debugger->flamingDeath("Something bad happened in SHSci::accessReg.");
+		debugger->flamingDeath("Something bad happened in SHSci::accessReg.");
 	}
 	return 0;
 }
