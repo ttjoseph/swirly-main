@@ -44,8 +44,8 @@ int main(int argc, char *argv[])
 
 	// load the boot ROM
 	printf("Loading boot ROM...");
-	//o->load("../fakebootrom/fbr.bin", 0xA0000000);
-	o->load("../images/fbr.bin", 0xa0000000);
+	o->load("../fakebootrom/fbr.bin", 0xA0000000);
+	//o->load("../images/fbr.bin", 0xa0000000);
 	printf("done.\n");
 
 	// load the flash memory
@@ -56,9 +56,9 @@ int main(int argc, char *argv[])
 	// load the images we're going to run
 	printf("Loading images...");
 	//o->loadIso("ip.bin", 0x8c008000);
-	o->load("../images/swirly-ip.bin", 0x8c008000);
-	o->load("../images/video.bin", 0x8c010000);
-	//o->loadSrec("../images/stars.srec");
+	o->load("../images/IP.BIN", 0x8c008000);
+	//o->load("../images/video.bin", 0x8c010000);
+	o->loadSrec("../images/stars.srec");
 	//o->loadSrec("../images/mapletest.srec");
 	//o->loadSrec("../images/videotest.srec");
 	//cpu->gdrom->startSector(0);
