@@ -92,7 +92,7 @@ private:
 	int searchItlb(Dword addr);
 	void updateMmucrUrc();
 	int searchUtlb(Dword addr);
-	int checkAsids(Dword tlbentry);
+	int checkAsids(Dword tlbaddress, Dword tlbdata1);
 	int accessUTLB(Dword &addr, int type);
 	int accessITLB(Dword &addr);
 	Dword accessP4(Dword accessAddr, int eventType, Dword tempData);

@@ -661,17 +661,21 @@ void SHCpu::SETS(Word op)
 
 void SHCpu::RTS(Word op)
 {
+	delayException = false;
 	delaySlot();
 	debugger->reportBranch("rts", PC, PR);
-	PC=PR;
+	if (delayException==false) PC=PR;
 }	
 
 void SHCpu::RTE(Word op) // privileged
 {
+	delayException = false;
 	delaySlot();
-	setSR(SSR);
 	debugger->reportBranch("rte", PC, SPC);
-	PC=SPC;
+	if (delayException==false) {
+		setSR(SSR);
+		PC=SPC;
+	}
 }
 
 void SHCpu::ROTR(Word op)
@@ -1466,11 +1470,13 @@ void SHCpu::JSR(Word op)
 	Dword temp, oldpc;
 	temp = R[n];
 	oldpc = PC;
+	delayException = false;
 	delaySlot();
-	PR=oldpc+4;
-	
 	debugger->reportBranch("jsr", PC, temp);
-	PC=temp;
+	if (delayException==false) {
+		PC=temp;
+		PR=oldpc+4;
+	}
 }
 
 void SHCpu::JMP(Word op)
@@ -1478,10 +1484,10 @@ void SHCpu::JMP(Word op)
 	int n = getN(op);
 	Dword temp;
 	temp = R[n];
+	delayException = false;
 	delaySlot();
-	
 	debugger->reportBranch("jmp", PC, temp);
-	PC=temp;
+	if (delayException==false) PC=temp;
 }	
 
 void SHCpu::DMULU(Word op)
@@ -1803,16 +1809,17 @@ void SHCpu::BTS(Word op)
 	Dword dest, oldpc;
 	dest = PC + 4 + (((Sdword) (Sbyte) (op&0xff)) * 2);
 	oldpc = PC;
+	delayException = false;
 	if((SR & F_SR_T)==1)
 	{
 		delaySlot();
 		debugger->reportBranch("bts", PC, dest);
-		PC=dest;
+		if (delayException==false) PC=dest;
 	}
 	else
 	{
 		delaySlot();
-		PC=oldpc+4;
+		if (delayException==false) PC=oldpc+4;
 	}
 }
 
@@ -1835,10 +1842,13 @@ void SHCpu::BSRF(Word op)
 	Dword dest, oldpc;
 	dest = PC+4+(Sdword)R[n];
 	oldpc = PC;
+	delayException = false;
 	delaySlot();
-	PR=oldpc+4;
 	debugger->reportBranch("bsrf", PC, dest);
-	PC=dest;
+	if (delayException==false) {
+		PC=dest;
+		PR=oldpc+4;
+	}
 }
 
 void SHCpu::BSR(Word op)
@@ -1851,10 +1861,13 @@ void SHCpu::BSR(Word op)
 		d|=0xfffff000;
 	dest = PC+4+(Sdword)(Sword)(d<<1);
 	oldpc=PC;
+	delayException = false;
 	delaySlot();
-	PR=oldpc+4;
 	debugger->reportBranch("bsr", PC, dest);
-	PC=dest;
+	if (delayException==false) {
+		PC=dest;
+		PR=oldpc+4;
+	}
 }
 
 void SHCpu::BRAF(Word op)
@@ -1862,9 +1875,10 @@ void SHCpu::BRAF(Word op)
 	int n = getN(op);
 	Dword dest;
 	dest = PC+4+(Sdword)R[n];
+	delayException = false;
 	delaySlot();
 	debugger->reportBranch("braf", PC, dest);
-	PC=dest;
+	if (delayException==false) PC=dest;	// no exception
 }
 
 void SHCpu::BRA(Word op)
@@ -1876,9 +1890,10 @@ void SHCpu::BRA(Word op)
 	if((d & 0x800) != 0)
 		d|=0xfffff000;
 	dest = PC+4+(Sdword)(Sword)(d<<1);
+	delayException = false;
 	delaySlot();
 	debugger->reportBranch("bra", PC, dest);
-	PC=dest;
+	if (delayException==false) PC=dest;	// no exception
 }
 
 void SHCpu::BFS(Word op)
@@ -1886,16 +1901,17 @@ void SHCpu::BFS(Word op)
 	Dword dest, oldpc;
 	dest = PC + 4 + (((Sdword) (Sbyte) (op&0xff)) * 2);
 	oldpc = PC;
+	delayException = false;
 	if((SR & F_SR_T)==0)
 	{
 		delaySlot();
 		debugger->reportBranch("bfs", PC, dest);
-		PC=dest;
+		if (delayException==false) PC=dest;
 	}
 	else 
 	{
 		delaySlot();
-		PC=oldpc+4;
+		if (delayException==false) PC=oldpc+4;
 	}
 }
 
@@ -2249,7 +2265,7 @@ void SHCpu::FABS(Word op)
 	int n = getN(op);
 	FPU_DP_FIX_N();
 	
-	if(FPU_DP()) *(((Qword*)DR)+n) &= 0x7fffffffffffffff;
+	if(FPU_DP()) *(((Qword*)DR)+n) &= 0x7fffffffffffffffULL;
 	else         *(((Dword*)FR)+n) &= 0x7fffffff;
 
 	PC+=2;
@@ -2257,13 +2273,13 @@ void SHCpu::FABS(Word op)
 
 inline int SHCpu::test_pinf(int n) 
 {
-	if(FPU_DP()) return *(((Qword*)DR)+n) == 0x7ff0000000000000;
+	if(FPU_DP()) return *(((Qword*)DR)+n) == 0x7ff0000000000000ULL;
 	else         return *(((Dword*)FR)+n) == 0x7f800000;
 }
 
 inline int SHCpu::test_ninf(int n)
 {
-	if(FPU_DP()) return *(((Qword*)DR)+n) == 0xfff0000000000000;
+	if(FPU_DP()) return *(((Qword*)DR)+n) == 0xfff0000000000000ULL;
 	else         return *(((Dword*)FR)+n) == 0xff800000;
 }
 
@@ -2271,8 +2287,8 @@ inline int SHCpu::test_snan(int n)
 {
 	if(FPU_DP()) 
 	{ 
-		Qword abs = *(((Qword*)DR)+n) &= 0x7fffffffffffffff;
-		return (abs >= 0x7ff8000000000000);
+		Qword abs = *(((Qword*)DR)+n) &= 0x7fffffffffffffffULL;
+		return (abs >= 0x7ff8000000000000ULL);
 	} 
 	else
 	{
@@ -2285,8 +2301,8 @@ inline int SHCpu::test_qnan(int n)
 {
 	if(FPU_DP()) 
 	{ 
-		Qword abs = *(((Qword*)DR)+n) &= 0x7fffffffffffffff;
-		return (abs > 0x7ff0000000000000 && abs < 0x7ff8000000000000);
+		Qword abs = *(((Qword*)DR)+n) &= 0x7fffffffffffffffULL;
+		return (abs > 0x7ff0000000000000ULL && abs < 0x7ff8000000000000ULL);
 	} 
 	else
 	{
@@ -2299,9 +2315,9 @@ inline int SHCpu::test_denorm(int n)
 {
 	if(FPU_DP())
         {
-		Qword abs = *(((Qword*)DR)+n) &= 0x7fffffffffffffff;
-		return (abs < 0x0010000000000000) && !(FPSCR & F_FPSCR_DN) && 
-			(abs != 0x0000000000000000); 
+		Qword abs = *(((Qword*)DR)+n) &= 0x7fffffffffffffffULL;
+		return (abs < 0x0010000000000000ULL) && !(FPSCR & F_FPSCR_DN) && 
+			(abs != 0x0000000000000000ULL); 
 	}
 	else
        	{
@@ -2313,7 +2329,7 @@ inline int SHCpu::test_denorm(int n)
 
 inline void SHCpu::qnan(int n)
 { 
-	if(FPU_DP()) *(((Qword*)DR)+n) = 0x7ff7ffffffffffff;
+	if(FPU_DP()) *(((Qword*)DR)+n) = 0x7ff7ffffffffffffULL;
 	else         *(((Dword*)FR)+n) = 0x7fbfffff;
 	
 	PC+=2;
@@ -2324,7 +2340,7 @@ inline void SHCpu::invalid(int n)
 	FPSCR |= F_FPSCR_V;
 	if(!(FPSCR & F_ENABLE_V))
        	{
-		if(FPU_DP()) *(((Qword*)DR)+n) = 0x7ff7ffffffffffff;
+		if(FPU_DP()) *(((Qword*)DR)+n) = 0x7ff7ffffffffffffULL;
 		else         *(((Dword*)FR)+n) = 0x7fbfffff;
 				     //0xffffffdc;
 	}

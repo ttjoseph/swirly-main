@@ -85,6 +85,7 @@ public:
 
         Word currInstruction;
 
+	int delayException;		// var to recognize exceptions in a delay slot
 	Dword *R, *RBANK, RBANK0[16], RBANK1[16], SR, GBR, VBR, MACH, MACL, PR, PC,
 	SPC, DBR, SSR, SGR, *FR_Dwords, *XF_Dwords;
 	// FPU regs

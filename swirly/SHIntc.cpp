@@ -245,7 +245,7 @@ void SHIntc::exception(Dword type, Dword addr, Dword data, char *datadesc)
 {
     exceptionsPending++;
 
-    printf("Obtained a general exception %s\n", getExceptionName(type));
+    printf("Obtained a general exception %s access adr %08x at PC %08x\n", getExceptionName(type), addr, cpu->PC);
 
     if(type==E_GENERAL_ILLEGAL_INSTRUCTION) 
 	debugger->flamingDeath("Illegal instruction");
@@ -260,6 +260,7 @@ void SHIntc::exception(Dword type, Dword addr, Dword data, char *datadesc)
 	
     cpu->SPC = cpu->PC;
     cpu->SSR = cpu->SR;
+	cpu->delayException = true;
 
     CCNREG(EXPEVT) = type;
 

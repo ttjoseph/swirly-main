@@ -278,7 +278,6 @@ int SHMmu::accessUTLB(Dword &addr, int type)
 	// Now we know that VPNs match and V=1(the entry is valid)
 	// We must check for Data TLB protection violation exception
 	// To do this we use the PR bits, in UTLB_Data1, bits 6-5
-//	printf("SHMmu::translateVirtual: address %08x RPN %08x\n", addr, UTLB_Data1[theentry]);
 
 	int protection = (UTLB_Data1[theentry] >> 5) & 3;
 	if (type & MMU_WRITE) protection |= 0x4;
@@ -302,6 +301,8 @@ int SHMmu::accessUTLB(Dword &addr, int type)
 	// SZ is in bits 7 and 4 of UTLB_Data1[theentry]
 	addr = (UTLB_Data1[theentry] & UTLB_Mask[theentry]) | (addr & ~UTLB_Mask[theentry]);
 
+//	printf("SHMmu::translateVirtual: address %08x\n", addr);
+
 	// change addresses 0x1c000000-0x1fffffff to 0xfc000000-0xffffffff
 	if (addr > 0x1c000000) addr |= 0xe0000000; 
 	return false;
@@ -315,7 +316,7 @@ int SHMmu::translateVirtual(Dword &addr, int type)
 
 	if (addr < 0x80000000) {	// P0, U0
 		// address translation on
-		if (cpu->ccnRegs[MMUCR] & 1) return accessUTLB(addr, type);
+		if (CCNREG(MMUCR) & 1) return accessUTLB(addr, type);
 		// address translation off
 		addr &= 0x1fffffff;
 		return false;
@@ -344,7 +345,7 @@ int SHMmu::translateVirtual(Dword &addr, int type)
 
 	if (addr < 0xe0000000) {	// P3
 		// address translation on
-		if (cpu->ccnRegs[MMUCR] & 1) return accessUTLB(addr, type);
+		if (CCNREG(MMUCR) & 1) return accessUTLB(addr, type);
 		// address translation off
 		addr &= 0x1fffffff;
 		return false;
@@ -354,16 +355,15 @@ int SHMmu::translateVirtual(Dword &addr, int type)
 	return false;
 }
 
-int SHMmu::checkAsids(Dword tlbentry)
+int SHMmu::checkAsids(Dword tlbaddress, Dword tlbdata1)
 {
 	// see if ASIDs should match and if so, check if they do
 	// (SH==0) and (MMUCR.SV==0 or SR.MD==0)?
-	if(!(tlbentry & 2) &&
-	   (((*((Dword*)(cpu->ccnRegs+MMUCR)) & 0x100) == 0) ||
-	    ((cpu->SR & 0x40000000) == 0)))
+	if (tlbdata1 & 2) return true;
+	if ((((CCNREG(MMUCR) & 0x100) == 0) || ((cpu->SR & 0x40000000) == 0)))
 	{
 		// ASIDs must match
-		if((*((Dword*)(cpu->ccnRegs+PTEH))&0xff) != (tlbentry & 0xff))
+		if((*((Dword*)(cpu->ccnRegs+PTEH))&0xff) != (tlbaddress & 0xff))
 			return 0;
 		else
 			return 1;
@@ -383,7 +383,7 @@ int SHMmu::searchUtlb(Dword addr)
 		if(!(UTLB_Data1[i] & 0x100)) continue;
 		if((UTLB_Addr[i] & UTLB_Mask[i]) == (addr & UTLB_Mask[i]))
 		{
-			if(checkAsids(UTLB_Addr[i]))
+			if(checkAsids(UTLB_Addr[i], UTLB_Data1[i]))
 			{
 				theentry=i;
 				break;
@@ -418,7 +418,7 @@ int SHMmu::searchItlb(Dword addr)
 		if(!(ITLB_Data1[i] & 0x100)) continue;
 		if((ITLB_Addr[i] & ITLB_Mask[i]) == (addr & ITLB_Mask[i]))
 		{
-			if(checkAsids(ITLB_Addr[i]))
+			if(checkAsids(ITLB_Addr[i], ITLB_Data1[i]))
 			{
 				theentry=i;
 				break;
@@ -440,11 +440,11 @@ void SHMmu::ldtlb()
 		case 0x00: // 1K pages
 			UTLB_Mask[addr] = 0xfffffc00; break;
 		case 0x10: // 4K pages
-	        UTLB_Mask[addr] = 0xfffff000; break;
+			UTLB_Mask[addr] = 0xfffff000; break;
 		case 0x80: // 64K pages
-	        UTLB_Mask[addr] = 0xffff0000; break;
+			UTLB_Mask[addr] = 0xffff0000; break;
 		case 0x90: // 1M pages
-	        UTLB_Mask[addr] = 0xfff00000; break;
+			UTLB_Mask[addr] = 0xfff00000; break;
 	}
 }
 
@@ -493,7 +493,116 @@ Dword SHMmu::accessP4(Dword accessAddr, int eventType, Dword tempData)
 			SQ1[(accessAddr >> 2) & 7] = tempData;
 		return tempData;
 	}
+
+	switch(accessAddr >> 24) {
+	case 0xf0:	// access i-cache address
+	case 0xf1:	// access i-cache data
+	case 0xf4:	// access o-cache address
+	case 0xf5:	// access o-cache data
+//		printf("Access to %08x\n", accessAddr);
+		return 0;
+
+	case 0xf6: {	// access u-tlb address
+
+		int entry = (accessAddr>>8) & 0x3f;
+
+		if (eventType & MMU_WRITE) {
+			printf("Write access to UTLB address array at %08x (%08x)\n",accessAddr,tempData);
+
+			if (accessAddr & 0x80) {
+//				printf("SHMmu:accessP4: associative utlb address access at %08x\n", accessAddr);
+
+				int vpn_asid = (tempData & 0xfffff700) | (CCNREG(PTEH) & 0xff);
+
+				int i, uentry = MMU_TLB_MISS, ientry = MMU_TLB_MISS; // nonsense value to signal an error
+
+				for(i=0;i<64;i++) {
+					if(UTLB_Addr[i] == vpn_asid)
+					{
+							uentry=i;
+							break;
+					}
+				} // UTLB search
+				
+				if (uentry != MMU_TLB_MISS) {	// found an entry
+					printf("Found an uentry (%d) for associative update\n", uentry);
+					// UTLB_Addr[uentry] = tempData & ~0x300;
+					UTLB_Data1[uentry] = (UTLB_Data1[uentry] & ~0x104) |
+						    (tempData & 0x100) |
+						    ((tempData >> 7) & 0x40);
+				}
+
+				for(i=0;i<4;i++) {
+					if(ITLB_Addr[i] == vpn_asid)
+					{
+							ientry=i;
+							break;
+					}
+				} // ITLB search
+
+				if (ientry != MMU_TLB_MISS) {	// found an entry
+					printf("Found an ientry (%d) for associative update\n", ientry);
+					// ITLB_Addr[uentry] = tempData & ~0x300;
+					ITLB_Data1[ientry] = (ITLB_Data1[ientry] & ~0x100) | (tempData & 0x100);
+				}
+			} else {
+				UTLB_Addr[entry] = tempData & ~0x300;
+				UTLB_Data1[entry] = (UTLB_Data1[entry] & ~0x104) |
+					    (tempData & 0x100) |
+					    ((tempData >> 7) & 0x40);
+			}
+			return 0;
+		} else {
+			printf("Read access to UTLB address array at %08x\n",accessAddr);
+
+			Dword retval = UTLB_Addr[entry] & ~0x300;
+			retval |= (UTLB_Data1[entry] & 0x100);
+			retval |= ((UTLB_Data1[entry] & 0x40) << 7);
+			return retval;
+		} 
+		} break;
+
+	case 0xf7: {	// access u-tlb data
+		int entry = (accessAddr>>8) & 0x3f;
+
+		if (accessAddr < 0xf7800000) { // UTLB Data Array 1
+			if (eventType & MMU_WRITE) {
+				printf("Write access to UTLB data1 array at %08x (%08x)\n",accessAddr,tempData);
+
+				UTLB_Data1[entry] = tempData;
+				switch(UTLB_Data1[entry] & 0x90) {
+				case 0x00: // 1K pages
+					UTLB_Mask[entry] = 0xfffffc00; break;
+				case 0x10: // 4K pages
+					UTLB_Mask[entry] = 0xfffff000; break;
+				case 0x80: // 64K pages
+					UTLB_Mask[entry] = 0xffff0000; break;
+				case 0x90: // 1M pages
+					UTLB_Mask[entry] = 0xfff00000; break;
+				}
+				return 0;
+			} else {
+				return UTLB_Data1[entry];
+			}
+		} else { // UTLB Data Array 2
+			if (eventType & MMU_WRITE) {
+				UTLB_Data2[entry] = tempData;
+				return 0;
+			} else {
+				return UTLB_Data2[entry];
+			}
+		}
+		} break;
+
+	case 0xff:
+		break;
+	default:
+		printf("Access to %08x\n", accessAddr);
+
+
+	}
     
+	// handle access to >= 0xff000000
 	switch(addr >> 16)
 	{
 	case 0x00: realAddr = (Dword) cpu->ccnRegs + (accessAddr & 0xff); break;
