@@ -1,3 +1,11 @@
+1 September 2001
+	- Added "l" debugger command, which loads the contents of a file to SH memory
+	- Overlord::loadSrec now prints a message if it can't find the file to load
+	- Added ability to write scripts for the debugger - these are executed one-shot
+	  from start to finish, no for loops or if statements or any of that fluff ;)
+	- Added "s" debugger command, which runs a script
+	- Swirly now tries to run a script called "autoexec.script" on startup, which
+	  is a good place to put a command that loads the fake boot ROM
 16 August 2001
 	- Added STS instructions for FPU
 	- Added FTRC to SHCpu::executeInstruction (function was already written, just

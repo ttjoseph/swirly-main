@@ -7,11 +7,19 @@ Website: http://swirly.sourceforge.net
 Quickstart
 ----------
 
-First get the latest SDL runtime from http://www.libsdl.org and install it.
+Libraries that Swirly is linked against:
+	- SDL (http://www.libsdl.org)
+	- OpenGL/Mesa (I use XFree86 DRI)
+	- pthread
+
+I use Jam (http://public.perforce.com) instead of make but it shouldn't be too
+hard for to write a Makefile.
 
 You need to provide an IP.BIN for Swirly to run.  Marcus Comstedt's IP.BIN creator
-works - get it at http://mc.pp.se/dc.  Swirly comes with a boot ROM image and
-a sample program to run.
+works - get it at http://mc.pp.se/dc.  Swirly comes with a boot ROM image (not
+the real Dreamcast boot ROM, instead a fake one I wrote) and a sample program to
+run - Dan Potter's Stars demo, which can also be obtained from
+http://cadcdev.sourceforge.net.
 
 *** Swirly CANNOT run commercial games! ***
 

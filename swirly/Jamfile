@@ -18,7 +18,7 @@ Main swirly :
 	Gdrom.cpp
 	Maple.cpp  
 	SHBsc.cpp     
-	SHDmac.cpp  
+	SHDmac.cpp
 	SHMmu.cpp   
 	SHTmu.cpp 
 	main.cpp

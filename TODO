@@ -1,3 +1,5 @@
+- Debugger::runScript requires that a newline be present after each line in the script.
+	Make this not so.
 - Put SCIF printf's and trapa's in tatest and do some debugging
 - Implement the FPU in assembly so we don't have to deal with C/C++'s
 	automatic type conversion.  Also it ought to be faster.

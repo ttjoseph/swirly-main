@@ -52,6 +52,37 @@ Debugger::~Debugger()
 	delete breakpoints;
 }
 
+// loads and runs a script of debugger commands
+// returns false on error
+bool Debugger::runScript(char *fname)
+{
+	FILE *fp = fopen(fname, "r");
+	if(fp == NULL)
+		return false;
+
+	char tmp[1024], tmp2[1024];
+	while(!feof(fp))
+	{
+		if(fgets(tmp, 1024, fp) == NULL)
+			break;
+		// % is a comment character - everything to the right of it is ignored
+		for(int i=0; i<strlen(tmp); i++)
+		{
+			if(tmp[i] == '%')
+			{
+				tmp[i] = 0;
+				break;
+			}
+		}
+		// throw out blank lines
+		getToken(tmp, 1, tmp2);
+		if(strlen(tmp2) > 0)
+			dispatchCommand(tmp);
+	}
+
+	return true;
+}
+
 void Debugger::print(char *fmt, ...)
 {
 	if(showStatusMessages)
@@ -224,6 +255,8 @@ bool Debugger::dispatchCommand(char *cmd)
 #define DO_CMD(a, b) if(strcmp(a, firstToken)==0) return b(cmd)
 
 	DO_CMD("d", cmdD);
+	DO_CMD("s", cmdS);
+	DO_CMD("l", cmdL);
 	DO_CMD("bx", cmdBx);
 	DO_CMD("bl", cmdBl);
 	DO_CMD("g", cmdG);
@@ -384,6 +417,51 @@ bool Debugger::cmdTrb(char *cmd)
 		fprintf(branchTraceFile,
 			"--> PC=%08X: Branch trace logging turned on <--\n", cpu->PC);
 		printf("Branch trace logging is on.\n");
+	}
+	return false;
+}
+
+// debugger command to run a script
+bool Debugger::cmdS(char *cmd)
+{
+	char fname[255];
+	getToken(cmd, 1, fname);
+	if(strlen(fname) == 0)
+	{
+		printf("Usage: s <filename>\n");
+		return false;
+	}
+	if(runScript(fname) == false)
+		printf("Couldn't execute script %s.\n", fname);
+}
+
+// debugger command to load file to an arbitrary address
+bool Debugger::cmdL(char *cmd)
+{
+	char fname[255], addr[255];
+	Dword theaddr;
+	getToken(cmd, 1, fname);
+	getToken(cmd, 2, addr);
+	if(strlen(fname) == 0)
+	{
+		printf("Usage: l <filename> [addr-in-hex]\n");
+		return false;
+	}
+	sscanf(addr, "%x", &theaddr);
+	if((strlen(fname) > 5) && (strcmp(fname+strlen(fname)-5, ".srec") == 0))
+	{
+		printf("Loading %s as SREC...\n", fname);
+		cpu->overlord->loadSrec(fname);
+	}
+	else
+	{
+		if(strlen(addr) == 0)
+		{
+			printf("Error: You need to specify an address.\n");
+			return false;
+		}
+		printf("Loading %s as flat binary to %08x...\n", fname, theaddr);
+		cpu->overlord->load(fname, theaddr);
 	}
 	return false;
 }

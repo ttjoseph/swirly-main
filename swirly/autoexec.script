@@ -1,0 +1,6 @@
+% Script file for Swirly debugger
+% Automatically executed!
+
+l ../fakebootrom/fbr.bin a0000000
+l ../images/IP.BIN 8c008000
+l ../images/stars.srec

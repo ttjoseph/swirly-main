@@ -91,7 +91,7 @@ void Overlord::load(char *fname, Dword addr)
 	fp = fopen(fname, "rb");
 	if(fp == NULL)
 	{
-		printf("can't open %s! ", fname);
+		printf("Can't open %s!\n", fname);
 		return;
 	}
 
@@ -110,7 +110,7 @@ void Overlord::load(char *fname, Dword addr)
 // blocks.  So I'm lazy.
 void Overlord::loadIso(char *fname, Dword addr)
 {
-	FILE *fp; 
+	FILE *fp;
 	// FILE *out;
 	long fsize;
 	int numblocks;
@@ -271,7 +271,10 @@ bool Overlord::loadSrec(char *fname)
 {
 	FILE *fp = fopen(fname, "rb");
 	if(fp == NULL)
+	{
+		printf("Couldn't open %s!\n", fname);
 		return false;
+	}
 	char type[4], count[4];
 	int numBytes;
 
@@ -284,7 +287,7 @@ bool Overlord::loadSrec(char *fname)
 
 		fread(&count, 1, 2, fp);
 		type[2] = count[2] = 0; // null terminate
-		//convertSrecBytes(count, (char*)&numBytes, 1); 
+		//convertSrecBytes(count, (char*)&numBytes, 1);
 		sscanf(count, "%02x", &numBytes);
 
 		switch(type[1])
@@ -301,7 +304,7 @@ bool Overlord::loadSrec(char *fname)
 				delete desc;
 				break;
 			}
-		
+
 		case '3': // 4-byte address
 			{
 				numBytes -= 4;
@@ -314,7 +317,7 @@ bool Overlord::loadSrec(char *fname)
 				// we'll throw out the checksum
 				numBytes--;
 				convertSrecBytes(buf, buf, numBytes);
-				copyFromHost(cpu, addr, buf, numBytes);				
+				copyFromHost(cpu, addr, buf, numBytes);
 
 				break;
 			}

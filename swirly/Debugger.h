@@ -12,7 +12,7 @@
 #define DBG_BP_EXECUTION 101
 #define DBG_BP_MEMACCESS 102
 
-class Debugger  
+class Debugger
 {
 public:
 	void checkExecBp();
@@ -28,6 +28,7 @@ public:
   char* disasmInstr(Word d, Dword pc);
 	void reportBranch(char *tag, Dword src, Dword dest);
 	void print(char *fmt, ...);
+	bool runScript(char *fname);
 
 	bool promptOn, showStatusMessages;
 
@@ -73,6 +74,8 @@ private:
   bool cmdUf(char *cmd);
 	bool cmdStat(char *cmd);
 	bool cmdF(char *cmd);
+	bool cmdL(char *cmd);
+	bool cmdS(char *cmd);
 
 };
 
