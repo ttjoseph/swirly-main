@@ -12,9 +12,6 @@ Libraries that Swirly is linked against:
 	- OpenGL/Mesa (I use XFree86 DRI)
 	- pthread
 
-I use Jam (http://public.perforce.com) instead of make but it shouldn't be too
-hard to write a Makefile.
-
 You need to provide an IP.BIN for Swirly to run.  Marcus Comstedt's IP.BIN creator
 works - get it at http://mc.pp.se/dc.  Swirly comes with a boot ROM image (not
 the real Dreamcast boot ROM, instead a fake one I wrote) and a sample program to
@@ -47,7 +44,10 @@ http://www.libsdl.org.  By the way, SDL is an excellent cross-platform library f
 sound, and some other things.  It greatly eased development of Swirly.
 
 I've switched to using Jam instead of make.  Get it from public.perforce.com -
-don't worry, it's free.  And cool.
+don't worry, it's free.  And cool. 
+
+There's also a Makefile provided.
+
 
 Known issues
 ------------

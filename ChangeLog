@@ -1,4 +1,11 @@
-17 May 2003
+24 Mar 2003
+	- more texture support (ARGB444, ARGB1555)
+	- controller/maple code, cleanups
+	- some GPU regs implemented, bug fixes
+	- reorganization and cleanup of code
+	- glOrtho changes (more demos work now)
+
+17 Mar 2003
 	- swirly revived. 
 	- patches from Michael Schnerr applied. Much thanks!
 	- rudimentary texture loading
