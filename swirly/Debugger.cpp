@@ -71,7 +71,7 @@ bool Debugger::runScript(char *fname)
 		if(fgets(tmp, 1024, fp) == NULL)
 			break;
 		// % is a comment character - everything to the right of it is ignored
-		for(int i=0; i<strlen(tmp); i++)
+		for(Dword i=0; i<strlen(tmp); i++)
 		{
 			if(tmp[i] == '%')
 			{
@@ -232,7 +232,6 @@ inline void Debugger::checkExecBp()
 bool Debugger::prompt()
 {
 	char userInput[512];
-	Word d;
 
 	if(execBpSet != false)
 	checkExecBp();
@@ -355,6 +354,7 @@ bool Debugger::cmdPath(char *cmd)
 {
 	getToken(cmd, 1, path);
 	printf("Path environment has been set to %s...\n", path);
+	return true;
 }
 
 // debugger command to dump memory
@@ -443,8 +443,12 @@ bool Debugger::cmdS(char *cmd)
 		printf("Usage: s <filename>\n");
 		return false;
 	}
-	if(runScript(fname) == false)
+	if(runScript(fname) == false) 
+        {
 		printf("Couldn't execute script %s.\n", fname);
+		return false;
+	}
+	return true;
 }
 
 // debugger command to load file to an arbitrary address

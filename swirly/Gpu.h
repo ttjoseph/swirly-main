@@ -68,22 +68,28 @@ class Gpu
 	void masks(Dword *rm, Dword *gm, Dword *bm, Dword *am);
 	
 	void setOptions(Dword data0, Dword data1, Dword data2);
-	void textureMap(Dword address, Dword data1, Dword data2);    
+	void textureMap(Dword data1, Dword data2);    
 	void rotateTextureData(Word *texture, int size, Byte shift);
 	void twiddleTexture(Word *texture, Dword address, int w, int h);
+	void twiddleTexture(Byte *texture, Dword address, int w, int h);
 	void decompressVQ(Word *texture, Dword address, int w, int h);
 	void updateFPS();
 	
 	int fpsCounter;
-	
-	Dword regs[0x80];       // 128 powervr regs
-	Float fog_table[0x100]; // 128 indices, 128 floating point entries for fog
-	Dword opl_table[0x280]; 
+
+	Dword taRegs[0x400]; // registers + fog table + opl table
+	Float *fogTable;
+	Dword *oplTable;
 	/*
 	  a05f8000 - a05f81ff: regs      0x200
 	  a05f8200 - a05f85ff: fog_table 0x400
 	  a05f8600 - a05f8fff: opl_table 0xa00
 	*/
+
+	// clipping
+	int clipMode;
+	bool clipInside;
+	
 	SDL_Surface *screen, *currBackBuffer, *backBuffers[GPU_MAXBACKBUFFERS];
 	Dword backBufferDCAddrs[GPU_MAXBACKBUFFERS], recvBuf[16];
 	int dwordsReceived, dwordsNeeded;

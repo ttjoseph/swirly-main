@@ -35,7 +35,7 @@ void SHTmu::updateTCNT1()
 	if(TSTR & 0x2) {
 		if (TCR1 & 0x20) {
 			cpu->intc->internalInt(TMU1, 0x420);
-		}							
+		}	
 		TCR1 |= 0x100; // turn on TCRx.UNF
 		TCNT1 = TCOR1;
 		cpu->addInterrupt(TCNT1 << 4, 3);
@@ -102,18 +102,18 @@ Dword SHTmu::hook(int event, Dword addr, Dword data)
 //	printf("TMU access at %08x: %08x\n", addr, data);
 
 	Dword *realaddr = 0;
-	Byte oldTstr = TSTR;
+//	Byte oldTstr = TSTR;
 
 //	update();
 
 	if ((event == MMU_WRITE_BYTE) && ((addr & 0xff)==0x04)) {
 		if (data & 0x1)  {
-		    printf("Timer 0 started: %08x\n", TCNT0);
+			//printf("Timer 0 started: %08x\n", TCNT0);
 			tcnt0StartTime = cpu->numIterations;
 			cpu->addInterrupt(TCNT0 << 2, 2);
 		}
 		if (data & 0x2)  {
-		    printf("Timer 1 started\n");
+			//printf("Timer 1 started\n");
 			tcnt1StartTime = cpu->numIterations;
 			cpu->addInterrupt(TCNT1 << 4, 3);
 		}
@@ -122,15 +122,15 @@ Dword SHTmu::hook(int event, Dword addr, Dword data)
 
 	if (event == MMU_READ_DWORD) {
 		if ((addr & 0xff)==0x0c)  {
-			printf ("Read Timer 0: %08x\n", (cpu->numIterations - tcnt0StartTime) >> 2);
+			//printf ("Read Timer 0: %08x\n", (cpu->numIterations - tcnt0StartTime) >> 2);
 			return ((cpu->numIterations - tcnt0StartTime) >> 4);
 		}
 		if ((addr & 0xff)==0x18)  {
-			printf ("Read Timer 1: %08x\n", (cpu->numIterations - tcnt1StartTime) >> 4);
+			//printf ("Read Timer 1: %08x\n", (cpu->numIterations - tcnt1StartTime) >> 4);
 			return ((cpu->numIterations - tcnt1StartTime) >> 4);
 		}
 	}
-	
+
 	switch(addr & 0xff)
 	{
 	case 0x00: realaddr = (Dword*)&TOCR; break;

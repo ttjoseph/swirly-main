@@ -77,7 +77,6 @@ bool Overlord::loadElf(char *fname)
 {
 	
 	FILE *fp;
-	Dword fsize;
 	
 	fp = fopen(fname, "rb");
 	if(fp == NULL) 
@@ -91,10 +90,9 @@ bool Overlord::loadElf(char *fname)
 	fread(header, 2, 26, fp);
 	
 	// verify that we indeed do have a correct ELF file on our hands
-	if((header[0] != 0x457f) || (header[1] != 0x464c) || 
-	   (header[2] != 0x0101) || ((header[9]&0xFF) != 0x2a)) 
+	if((header[0] != 0x457f) || (header[1] != 0x464c) || (header[2] != 0x0101))
         {
-		printf("Error: file does not appear to be an ELF file.\n", fname);
+		printf("Error: file %s does not appear to be an ELF file.\n", fname);
 		return false;
 	}
 	
@@ -246,7 +244,7 @@ void Overlord::copyFromHost(SHCpu *cpu, Dword dest, void *src, Dword len)
 	if(len&3) 
         {
 		Byte *sb = (Byte *)src;
-		for(int i=1; i<=(len&3); i++) 
+		for(Dword i=1; i<=(len&3); i++) 
 			cpu->mmu->writeByte(dest+len-i, sb[len-i]);
 	}
 }

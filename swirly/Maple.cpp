@@ -11,91 +11,110 @@ Maple::~Maple()
 	delete controller;
 }
 
-Dword Maple::hook(int eventType, Dword addr, Dword data) 
+
+Dword Maple::asicHook(int eventType, Dword addr, Dword data) 
 {
-	//cpu->debugger->print("Maple::access: access to external addr %08X, PC=%08X\n", addr, cpu->PC);
-	
-	static bool scanlineInterrupt = false;
-	static Controller::DeviceInfo *dev;
-	
 	switch(eventType) 
-        {
+      	{
 	case MMU_READ_DWORD:
 		switch(addr) 
                 {
 		case 0xa05f6930: 
-			return asic9a; // ASIC_IRQ9_A
+			return asic9a;
 		case 0xa05f6900: 
 			
-		        // XXX: this is VERY ugly. currently undergoing a rewrite 
+			// hack to get the ASIC working. Works OK in most situations.
+			// this is just here until we can figure out how to get rid of 0x8...
 
-			// hack: if we're done rendering BUT haven't sent the terminating
-			// command for opaque/transparent polys do so now
-			if(asicAckA==0x80) 
-                        {
-#define OPAQUE_POLY 0
-#if OPAQUE_POLY
-				// hack if you KNOW the demo has only opaque polys (eg kosh and wump)
-				scanlineInterrupt = true;
-#endif
-				return 0x80;
-			}
+			if(asicAckA==0x80) return 0x84;
+			if(asicAckA==0x200) return 0x204; 
 			
-			if(asicAckA==0x200) 
-                        {
-				scanlineInterrupt = true;
-				asicAckA |= 0x4;
-				return 0x200; 
-			}
-			
-			if(scanlineInterrupt) 
-                        {
-				scanlineInterrupt = false;
-				return 0x8;
-			}
-			
-			return (asicAckA | 0x8); // ASIC_ACK_A
-		case 0xa05f688c: // XXX: g2_fifo
-			
-			// to signal resume g2 dma return 0x20;
-			// to signal ready return 0;
-			// some programs need 1 back though... so we do 0x21
-			
-			g2Fifo = g2Fifo ? 0 : 0x21;
-			return g2Fifo; 
-			
-		case 0xa05f6c18: // Maple DMA
-			//cpu->debugger->print("Maple: check DMA status, PC=%08X\n", cpu->PC);
-			return 0; // hack, pretend DMA is done
-			
-		default: return 0;
+			return (asicAckA | 0x8); // hmm....
+		case 0xa05f6920:
+			// XXX: ... 
+			return 0;
+		default:
+			printf("Unknown read to asic address %08x\n", addr);
+			return 0;
 		}
-		
 	case MMU_WRITE_DWORD:
-		switch(addr) 
-                {
-		case 0xa05f6920: // asic irq b
-			
+		switch(addr)
+		{
+		case 0xa05f6920: 
+			// XXX: ... 
 			return 0;
 		case 0xa05f6930: 
-			asic9a = data; // ASIC_IRQ9_A
+			asic9a = data; 
 			return 0;
 		case 0xa05f6900: 
-			asicAckA &= ~data; // ASIC_ACK_A
+			asicAckA &= ~data;
 			return 0;
-		case 0xa05f6c04: // DMA address set
-			// we are given a physical address here, NOT a virtual address
-			dmaAddr = data;
+		default: printf("Unknown write to asic address %08x\n", addr);
 			return 0;
-		case 0xa05f6c14: // Maple enable
-			if(data & 1)
-				cpu->debugger->print("Maple: enabled\n");
-			else
-				cpu->debugger->print("Maple: disabled\n");
+		}
+
+	default: cpu->debugger->flamingDeath("Invalid access to Maple::asicHook");
+	}
+	return 0;
+}
+
+Dword Maple::g2Hook(int eventType, Dword addr, Dword data) 
+{
+	addr &= 0xfff;
+
+	if(eventType&MMU_WRITE) {
+
+		if(addr == 0x884) 
+                {
+			return 0; // XXX: ??? 
+		}
+		else if(addr == 0x888) 
+                {
+			return 0; // XXX: ??? 
+		}
+
+		printf("Unknown write to g2 bus address %03x\n", addr);
+		return 0;
+	} else {
+		if(addr == 0x88c) {
+			// XXX: hack
+			g2Fifo = g2Fifo ? 0 : 0x21;
+			return g2Fifo; 
+		}
+		printf("Unknown read to g2 bus address %03x\n", addr);
+		return 0;
+	}
+
+	return 0;
+}
+
+Dword Maple::mapleHook(int eventType, Dword addr, Dword data) 
+{
+	static Controller::DeviceInfo *dev;
+
+	switch(eventType) 
+      	{
+	case MMU_READ_DWORD:
+		switch(addr&0xff)
+		{
+		case MAPLE_DMA_ADDR: return 0; // hack: pretend DMA is done
+		case MAPLE_STATE_ADDR: return 0; // XXX: what to do here ??? 
+		default: printf("Unknown read to maple address %08x\n", addr); 
+		}
+		break;
+			
+	case MMU_WRITE_DWORD:
+		switch(addr&0xff)
+		{
+		case MAPLE_DMA_ADDR: 
+			dmaAddr = data; 
 			return 0;
-		case 0xa05f6c18: // DMA start
-			if(data & 1) 
-                        { // if bit 0 is set, begin transfer
+		case MAPLE_ENABLE_ADDR:
+			enabled = data & 1;
+			return 0;
+		case MAPLE_STATE_ADDR: 
+			if(enabled && (data & 1))
+                        { 
 				
 				int cmd, recipient, sender, addtlwords, last, port, length;
 				Dword transferDesc1, transferDesc2, frameHeader, dmaPtr, resultAddr;
@@ -194,23 +213,23 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 				asicAckA |= 0x1000;	// Maple DMA Transfer finished
 			}
 			return 0;
-		case 0xa05f6c80: // timeout / speed
-			cpu->debugger->print("Maple: timeout set to %d\n", data >> 16);
-			return 0;
-		case 0xa05f6c8c: // maple reset 1
+		case MAPLE_SPEED_ADDR: 
+			return 0; // silently ignore speed
+		case MAPLE_RESET1_ADDR: 
 			if(data != 0x6155404f)
 				printf("Maple: weird value for maple reset 1: %08x\n", data);
+			// the dreamcast boot rom gives us 0x61557f00. hmm.... 
 			return 0;
-		case 0xa05f6c10: // maple reset 2
+		case MAPLE_RESET2_ADDR: 
 			if(data != 0x00000000) 
 				printf("Maple: weird value for maple reset 2: %08x\n", data);
 			return 0;
-		default:
-			printf("Maple: data written to unknown address %08x\n", addr);
-			return 0;
+
+		default: printf("Unknown write to maple address %08x\n", addr); 
 		}
+		break;
+
+	default: cpu->debugger->flamingDeath("Invalid access to Maple::mapleHook");
 	}
-	
-	cpu->debugger->flamingDeath("Wrong parameters passed to Maple::hook");
 	return 0;
 }

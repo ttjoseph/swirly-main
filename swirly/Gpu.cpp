@@ -3,9 +3,6 @@
 
 #include "Gpu.h"
 
-#define RegDword(offs) (*((Dword*)(regs+offs)))
-#define RegFloat(offs) (*((float*)(regs+offs)))
-
 // static arrays to simplify parameters for pvr/opengl commands
 
 char *listType[] = { "opaque polygon", 
@@ -27,8 +24,13 @@ char *textureFormat[] = { "ARGB1555",
 			  "4BPP_PALETTE",
 			  "8BPP_PALETTE" };
 
-GLenum depthType[] = { GL_NEVER, GL_GEQUAL, GL_EQUAL, GL_GREATER, 
-		       GL_LEQUAL, GL_NOTEQUAL, GL_LESS, GL_ALWAYS};
+#if 1
+GLenum depthType[] = { GL_NEVER, GL_GEQUAL, GL_EQUAL, GL_GREATER,
+                       GL_LEQUAL, GL_NOTEQUAL, GL_LESS, GL_ALWAYS};
+#else
+GLenum depthType[] = { GL_NEVER, GL_LESS, GL_EQUAL, GL_LEQUAL,
+                       GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_ALWAYS};
+#endif
 
 GLenum blendFunc[] = { GL_ZERO, GL_ONE, GL_DST_COLOR, 
 		       GL_ONE_MINUS_DST_COLOR, GL_SRC_ALPHA,
@@ -42,6 +44,8 @@ GLfloat texEnv[] = { GL_REPLACE, GL_MODULATE, GL_DECAL, GL_MODULATE };
 
 int texSizeList[] = { 8, 16, 32, 64, 128, 256, 512, 1024 };
 	
+int actListData[] = { 1<<0x7, 1<<0x8, 1<<0x9, 1<<0xa, 1<<0x15 };
+
 Gpu::Gpu(SHCpu *shcpu) : 
     cpu(shcpu), screen(0), currBackBuffer(0), dwordsReceived(0) 
 {
@@ -51,14 +55,17 @@ Gpu::Gpu(SHCpu *shcpu) :
 		backBuffers[i] = 0;
 		backBufferDCAddrs[i] = GPU_BACKBUFFERUNUSED;
 	}
-	
+
+	fogTable = (Float *)taRegs+0x100;
+	oplTable = taRegs+0x280;
+
 	// default list type values
 	lastOPBConfig = 0x00000000;
 	lastType = 0;
 	
 	// set default values in registers
-	RegDword(GPU_REG_ID) = 0x17fd11db;
-	RegDword(GPU_REG_REVISION) = 0x11;
+	taRegs[GPU_REG_ID] = 0x17fd11db;
+	taRegs[GPU_REG_REVISION] = 0x11;
 }
 
 Gpu::~Gpu() 
@@ -73,24 +80,60 @@ Gpu::~Gpu()
 
 void Gpu::twiddleTexture(Word *texture, Dword address, int w, int h) 
 {
-	
-	// XXX: clean up
-	
-#define TWIDTAB(x) ( (x&1)|((x&2)<<1)|((x&4)<<2)|((x&8)<<3)|((x&16)<<4)| \
-        ((x&32)<<5)|((x&64)<<6)|((x&128)<<7)|((x&256)<<8)|((x&512)<<9) )
-#define TWIDOUT(x, y) ( TWIDTAB((y)) | (TWIDTAB((x)) << 1) )
-	
+
 	// code adapted from KOS which in turn was adapted from libdream
 	
+#define TWIDDLE(x) (x&0x01|((x&0x02)<<1)|((x&0x04)<<2)|((x&0x08)<<3)|((x&0x10)<<4) | \
+             ((x&0x20)<<5)|((x&0x40)<<6)|((x&0x80)<<7)|((x&0x100)<<8)|((x&0x200)<<9))
+
+	Dword texAddr;
 	int min = w > h ? h : w;
 	int mask = min-1;
-	int i;
+	int i, ytwid, square = 0;
+
+	bool invert = false; // we don't invert textures right now
+
+	if(w != h) square = min*min;
+
 	for(int y=0; y<h; y++) 
         {
-		// invert here -- (h-1)-y or y
+		i = invert ? (h-1)-y : y; 
+		ytwid = TWIDDLE((y&mask));
 		for(int x=0; x<w; x++) 
                 {
-			texture[y*w+x] = *(Word *)(cpu->mmu->videoMem+address+2*(TWIDOUT((x&mask), (y&mask)) + (x/min+y/min)*min*min));
+			texAddr = (TWIDDLE((x&mask)) << 1) | ytwid;
+			if(x>min) texAddr += (x/min)*square;
+			if(i>min) texAddr += (i/min)*square;
+			
+			texAddr <<= 1;
+
+			texture[y*w+x] = *(Word *)(cpu->mmu->videoMem+address+texAddr);
+		}
+	}
+}
+
+void Gpu::twiddleTexture(Byte *texture, Dword address, int w, int h) 
+{
+
+	Dword texAddr;
+	int min = w > h ? h : w;
+	int mask = min-1;
+	int ytwid, square = 0;
+
+	if(w != h) square = min*min;
+
+	for(int y=0; y<h; y++) 
+        {
+		ytwid = TWIDDLE((y&mask));
+		for(int x=0; x<w; x++) 
+                {
+			texAddr = (TWIDDLE((x&mask)) << 1) | ytwid;
+			if(x>min) texAddr += (x/min)*square;
+			if(y>min) texAddr += (y/min)*square;
+			
+			texAddr <<= 1;
+
+			texture[y*w+x] = *(Byte *)(cpu->mmu->videoMem+address+texAddr);
 		}
 	}
 }
@@ -98,48 +141,53 @@ void Gpu::twiddleTexture(Word *texture, Dword address, int w, int h)
 void Gpu::decompressVQ(Word *texture, Dword address, int w, int h) 
 {
 	
-	Word *codebook = (Word *)(cpu->mmu->videoMem+address); // 1024 entries
-	Word *data =     (Word *)(cpu->mmu->videoMem+address+1024); 
-	
-	Dword stride = w / 8;
-	
-	for(int i=0; i<h; i++) 
-		for(int j=0; j<stride; j++) 
-                {
-			
-			texture[i*stride+j] = codebook[data[i*stride+j]]; 
-			
-		}
-	
+#define BUGGY_VQ 0
+#if BUGGY_VQ
+	Word *codebook = (Word *)(cpu->mmu->videoMem+address); // 256*4 word entries
+
+        Byte *buf = new Byte[w*h/4];
+
+	// XXX: we need a correct twiddling algo
+	twiddleTexture(buf, address+2048, w/2, h/2); 
+
 #if 0
-	Word *tex = new Word[w*h];
-	
-	int min = w > h ? h : w;
-	int mask = min-1;
-	int i;
-	for(int y=0; y<h; y++) 
-        {
-		i = nt ? (h-1)-y : y;
-		for(int x=0; x<w; x++) 
-                {
-			tex[y*w+x] = *(Word *)(cpu->mmu->videoMem+address+2048+2*(TWIDOUT((x&mask), (i&mask)) + (x/min+i/min)*min*min));
-		}
+	printf("twiddled texture follows:\n");
+	Word *wb = (Word *)buf;
+	for(int i=0; i<w*h/8; i++) {
+		if((i%8)==0) printf("\n");
+		printf("%04x ", wb[i]);
+	}
+#endif
+
+	int x = 0;
+	for(int i=0; i<w*h/4; i++) {
+		Byte index = buf[i]<<2; 
+
+		texture[x++] = codebook[index+0];
+		texture[x++] = codebook[index+2]; 
+		texture[x++] = codebook[index+1]; 
+		texture[x++] = codebook[index+3]; 
 	}
 	
-	int s = w/8;
-	int size = w*h/2;
-	
-	for(int i=0; i<h; i++) 
-        {
-		for(int j=0; j<s; j++) 
-                {
-			
-			texture[i*s+j]  = tex[((i*s+j)*2)  ]&0xF;
-			texture[i*s+j] |= tex[((i*s+j)*2)+1]<<4;
-			
-			texture[i*s+j] = *(Word *)(cpu->mmu->videoMem+address+texture[i*s+j]);
-		}
-	}
+	delete [] buf;
+
+        Word *tex = new Word[w*h];
+
+	// shuffle around data -- flip and rotate the texture
+        for(int i=0; i<w; i++) {
+                for(int j=0; j<h; j++)
+                        tex[i*w+j] = texture[(i)*w+(h-j-1)];
+        }
+
+        for(int i=0; i<w; i++) {
+                for(int j=0; j<h; j++) {
+                        texture[j*h+i] = tex[(i)*w+(h-j-1)];
+                }
+        }
+
+	delete [] tex;
+#else
+	printf("VQ compression disabled. Enable Gpu::decompressVQ if you want visible results.\n");
 #endif
 } 
 
@@ -154,7 +202,7 @@ void Gpu::rotateTextureData(Word *texture, int size, Byte shift)
 	}
 }
 
-void Gpu::textureMap(Dword address, Dword data2, Dword data3) 
+void Gpu::textureMap(Dword data2, Dword data3) 
 {
 
 	// XXX: pvr reg 0x039 -- modulo width for textures
@@ -166,6 +214,8 @@ void Gpu::textureMap(Dword address, Dword data2, Dword data3)
 	static Dword texList[MAX_TEXTURES] = { 0 };
 	static int currTexNum = 0;
 	
+	Dword address = (data3<<3)&0x00fffff8;
+
 	int w = texSizeList[data2&0x38>>3];
 	int h = texSizeList[data2&0x7];
 	
@@ -193,8 +243,11 @@ void Gpu::textureMap(Dword address, Dword data2, Dword data3)
 		
 		bool stride      = (data3>>21)&1; // not supported
 		bool mipmap      = (data3>>31)&1; // not supported
+
+#if 0
 		int mipmapBias   = (data2>>8)&15; // not supported
-		
+#endif	
+	
 		// XXX: add this as a debugger command ("list textures")
 		printf("texture #%d data: %s, %dx%d, address %08x\n", 
 		       currTexNum, textureFormat[format], w, h, address);
@@ -251,13 +304,12 @@ void Gpu::textureMap(Dword address, Dword data2, Dword data3)
 	}
 	
 #if 0
-	int filter = (data2>>12)&7; // not supported
 	bool flipV = (data2>>17)&1; // not supported
 	bool flipU = (data2>>18)&1; // not supported
-	bool trans = (data2>>19)&1; // not supported 
+	bool trans = (data2>>19)&1; // not supported
 	bool alpha = (data2>>20)&1; // not supported
 #endif
-	
+
 	// clamp U or V textures
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texParam[(data2>>15)&1]);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texParam[(data2>>16)&1]);
@@ -265,39 +317,63 @@ void Gpu::textureMap(Dword address, Dword data2, Dword data3)
 	// texture environment parameters
 	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, texEnv[(data2>>6)&3]);
 	
-	// nice texture parameters
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	// XXX: this filter code is crap. we need bilinear and trilinear support ... 
+	if((data2>>12)&7) 
+        {
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	}
+	else 
+	{
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	}
 }
 
 void Gpu::setOptions(Dword data0, Dword data1, Dword data2) 
 {
-	
-	int stripLength = (data0<<18)&3;
-	if(stripLength) cpu->debugger->flamingDeath("Different strip length set");
-	
-	bool depthWrite = (data1<<26)&1;  // 0: enable, 1: disable
-	bool colorClamp = (data2<<21)&1;  // not supported
-	
-	if((data2<<20)&1) glEnable(GL_ALPHA_TEST);
+#if 0
+	// 0: striplength 1, 1: striplength 2, 2: striplength 4, 3: striplength 6
+	// dunno how old this information is. disabled for now. 
+	// XXX: check pvrmark, seems to trigger this.
+       	int stripLength = (data0>>18)&3;
+	if(stripLength) cpu->debugger->flamingDeath("Different strip length %d set", stripLength);
+
+	// XXX: does not work
+	// clipmode: 0 == disable, 2 == inside, 3 == outside
+	clipMode = (data0>>16)&3; 
+#endif
+
+	// XXX: maybe use glColorMask for this?
+	if((data2>>20)&1) glEnable(GL_ALPHA_TEST);
 	else             glDisable(GL_ALPHA_TEST);
+
+	glDepthFunc(depthType[(data1>>29)&0x7]);
+	//glShadeModel((recvBuf[0]>>1)&1 ? GL_FLAT : GL_SMOOTH);
+
+	// enable or disable depth buffer writing (note: 0 == enabled, 1 == disabled)
+	if((data1>>26)&1) glDepthMask(GL_FALSE);
+	else              glDepthMask(GL_TRUE);
+
+#if 0	
+	bool colorClamp = (data2>>21)&1;  // not supported
 	
-	bool modifier = (data0<<7)&1;     // not supported
-	bool modifierMode = (data0<<6)&1; // not supported
+	bool modifier = (data0>>7)&1;     // not supported
+	bool modifierMode = (data0>>6)&1; // not supported
 	
-	int fogMode = (data2<<22)&3;  // 0: table 1: vertex 2: disable 3:table2
-	int clipMode = (data0<<16)&3; // 0: disable 2: inside 3: outside
-	
+	int fogMode = (data2>>22)&3;  // 0: table 1: vertex 2: disable 3:table2
+#endif	
+
 	// culling options
-	int culling = (data1<<27)&3;
+	int culling = (data1>>27)&3;
 	
 	if(culling) 
         {
 		glEnable(GL_CULL_FACE);
 		switch(culling) 
                 {
-		case 3: glFrontFace(GL_CW); break;
-		case 2: glFrontFace(GL_CCW); break;
+		case 3: glFrontFace(GL_CCW); break;
+		case 2: glFrontFace(GL_CW); break;
 		case 1: break; // XXX: CULLING_SMALL
 		}
 	} 
@@ -360,14 +436,14 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 	else if(dwordsReceived == dwordsNeeded) 
         {
 		dwordsReceived = 0;
-		
+
 		switch(recvBufDwords[0] >> 29) 
                 {
 		case 7: // Vertex
 			if(withinList == false) 
                         {
 				
-				Dword base = 0xa5000000 | RegDword(0x4e);
+				Dword base = 0xa5000000 | taRegs[0x4e];
 				
 				// XXX: why this?
 				if((cpu->mmu->readDword(base) != 0x90800000) || 
@@ -417,7 +493,7 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
                                 {
 					glColor4f(((recvBuf[6]>>16)&0xff -(recvBuf[7]>>16)&0xff), 
 						  ((recvBuf[6]>>8) &0xff -(recvBuf[7]>>8) &0xff),
-						  ((recvBuf[6]     &0xff)-(recvBuf[7]     &0xff)), 
+						  ((recvBuf[6]     &0xff)-(recvBuf[7]     &0xff)),
 						  ((recvBuf[6]>>24)&0xff -(recvBuf[7]>>24)&0xff));
 				} 
 				else 
@@ -455,8 +531,9 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 					glTexCoord2f(recvFloat[4], recvFloat[5]);
 			}
 			
-			glVertex3f(recvFloat[1], recvFloat[2], recvFloat[3]);
-			
+			//glVertex3f(recvFloat[1], recvFloat[2], recvFloat[3]);
+			glVertex3fv(&recvFloat[1]);
+
 			if(recvBufDwords[0] & 0x10000000) 
                         {
 				glEnd();
@@ -469,17 +546,14 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 			textureType = recvBuf[0]&1;
 			colorType = (recvBuf[0]>>4)&3;
 			
-			glDepthFunc(depthType[(recvBuf[1]>>29)&0x7]);
-			//glShadeModel((recvBuf[0]>>1)&1 ? GL_FLAT : GL_SMOOTH);
-			
 			setOptions(recvBuf[0], recvBuf[1], recvBuf[2]);
-			
+
 			// both cmd and poly options must set texture enable options
 			textureEnable = (recvBuf[0]&8) && (recvBuf[1]>>25)&1;
 			if(textureEnable) 
                         {
 				glEnable(GL_TEXTURE_2D);
-				textureMap((recvBuf[3]<<3)&0x00fffff8, recvBuf[2], recvBuf[3]);
+				textureMap(recvBuf[2], recvBuf[3]);
 			} 
 			else 
                         {
@@ -490,32 +564,34 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 			//cpu->debugger->print("TA: depthType: %d\n", (recvBuf[1]>>29)&0x7);
 			break;
 		case 1: // user clip
-			//cpu->debugger->print("TA: User clip is %f %f %f %f\n",
-			//		 recvBuf[4],recvBuf[5],recvBuf[6],recvBuf[7]);
+
+			if(clipMode)
+			{
+				int h = height()/32; 
+				if(h > 20) break; // we got some weird height value
+
+				// XXX: not working
+				// XXX: may need to do stencil test instead
+				glEnable(GL_SCISSOR_TEST);
+
+				glScissor(recvBuf[4]*32, recvBuf[5]*32, 
+					  (recvBuf[6]-recvBuf[4]+1)*32, 
+					  (recvBuf[7]-recvBuf[5]+1)*32);
+			
+			}
+			else
+			{
+				glDisable(GL_SCISSOR_TEST);
+			}
+
 			break;
 		case 0: // End of list
 			
 			//cpu->debugger->print("TA: end of %s list\n",listType[actListType]);
-			switch (actListType) 
-                        {
-			case 0:	// opaque polygon
-				cpu->maple->asicAckA = 1<<0x7; 
-				break;
-			case 1:	// opaque modifier
-				cpu->maple->asicAckA = 1<<0x8; 
-				break;
-			case 2:	// transparent polygon
-				cpu->maple->asicAckA = 1<<0x9; 
-				break;
-			case 3:	// transparent modifier
-				cpu->maple->asicAckA = 1<<0xa; 
-				break;
-			case 4:	// punchthru polygon
-				cpu->maple->asicAckA = 1<<0x15;
-				break;
-			}
+
+			cpu->maple->asicAckA = actListData[actListType];
 			
-			// have we gotten the last list type? then let's do our voodoo
+			// have we gotten the last list type yet? then let's do our voodoo
 			if(lastType==actListType) 
                         {
 				SDL_GL_SwapBuffers();
@@ -556,7 +632,6 @@ void Gpu::draw2DFrame()
 	
 	SDL_LockSurface(screen);
 	
-	//memcpy(screen->pixels, cpu->mmu->videoMem, 
 	memcpy(screen->pixels, currBackBuffer->pixels, 
 	       currBackBuffer->pitch*currBackBuffer->h);
 	
@@ -571,27 +646,27 @@ Dword Gpu::hook(int eventType, Dword addr, Dword data)
 {
 	
 	Dword offs = (addr>>2) & 0xfff;
-	
+
 	switch(eventType) 
         {
 	case MMU_READ_DWORD:
 		
-		//XXX:
 		//if(offs<0x80 && regs[offs]==0)
 		//  cpu->debugger->print("GPU::access WARNING: read reg %.3x\n", offs);
-		
-		RegDword(GPU_SYNC_STAT) ^= 0x1ff;
-		if(offs<0x80)       return regs[offs];
-		else if(offs<0x180) return (*((Dword*)(fog_table+offs)));
-		else                return opl_table[offs];
+		taRegs[GPU_SYNC_STAT] ^= 0x1ff;
+
+		return taRegs[offs];
+
 		break;
 	case MMU_WRITE_DWORD:
-		
-		// special case: PVR_OPB_CFG
-		if((offs==PVR_OPB_CFG) && (lastOPBConfig != RegDword(offs))) 
+
+		taRegs[offs] = data;
+
+		// special case: figure out how much of each active list type we have
+		if((offs==PVR_OPB_CFG) && (lastOPBConfig != taRegs[offs])) 
                 {
 			
-			lastOPBConfig = RegDword(offs);
+			lastOPBConfig = taRegs[offs];
 			
 			punchThru = (lastOPBConfig>>16)&3;
 			transMod  = (lastOPBConfig>>12)&3;
@@ -605,20 +680,12 @@ Dword Gpu::hook(int eventType, Dword addr, Dword data)
 			else if(opaqMod)   lastType = 1;
 			else               lastType = 0;
 		}
-		
-		//cpu->debugger->print("GPU::access: write to addr %04X, PC=%08X\n",
-		//		     offs, cpu->PC);
-		
-		//if(offs==0x14) cpu->maple->asicAckA |= 0x40; // render done
-		
-		if(offs<0x80)       regs[offs] = data;
-		else if(offs<0x180) fog_table[offs-0x80] = (float)data;
-		else                opl_table[offs-0x180] = data;
 		break;
+
 	default:
 		cpu->debugger->flamingDeath("GPU::access: non-dword access!");
 	}
-	
+
 	// XXX: when exactly should we do this?
 	modeChange();
 	return 0;
@@ -627,7 +694,7 @@ Dword Gpu::hook(int eventType, Dword addr, Dword data)
 int Gpu::width()
 {
 	int tmp;
-	tmp = bits(RegDword(GPU_DISPLAY_SIZE), 9, 0);
+	tmp = bits(taRegs[GPU_DISPLAY_SIZE], 9, 0);
 	tmp++; // only works for VGA
 	tmp *= 4;
 	tmp /= (bpp() / 8);
@@ -637,7 +704,7 @@ int Gpu::width()
 int Gpu::height()
 {
 	int tmp;
-	tmp = bits(RegDword(GPU_DISPLAY_SIZE), 19, 10);
+	tmp = bits(taRegs[GPU_DISPLAY_SIZE], 19, 10);
 	tmp++; // only works for VGA
 	return tmp;
 }
@@ -645,37 +712,24 @@ int Gpu::height()
 int Gpu::bpp() 
 {
 	
-	switch((RegDword(GPU_DISPLAY_ENABLE) & 0xf) >> 2) 
+	switch((taRegs[GPU_DISPLAY_ENABLE] & 0xf) >> 2) 
         {
 	case 0: 
 	case 1: return 16;
 	case 3: return 32;
 	default:
 		cpu->debugger->flamingDeath("Gpu::bpp: Unknown bpp value in GPU_DISPLAY_ENABLE");
+		return 0;
 	}
 }
 
 void Gpu::masks(Dword *rm, Dword *gm, Dword *bm, Dword *am)
 {
-	switch((RegDword(GPU_DISPLAY_ENABLE) & 0xf) >> 2)
+	switch((taRegs[GPU_DISPLAY_ENABLE] & 0xf) >> 2)
 		{
-		case 0:
-			*bm = 0x1f;
-			*gm = 0x1f << 5;
-			*rm = 0x1f << 10;
-			*am = 0;
-			break;
-		case 1: // RGB565
-			*bm = 0x1f;
-			*rm = 0x1f << 11;
-			*gm = 0x3f << 5;
-			*am = 0;
-			break;
-		case 3: // RGBA8888
-			*rm = 0x00ff0000;
-			*gm = 0x0000ff00;
-			*bm = 0x000000ff;
-			*am = 0xff000000;
+		case 0: *bm = 0x1f; *gm = 0x1f << 5; *rm = 0x1f << 10; *am = 0; break;
+		case 1: *bm = 0x1f; *rm = 0x1f << 11; *gm = 0x3f << 5; *am = 0; break;
+		case 3: *rm = 0x00ff0000; *gm = 0x0000ff00; *bm = 0x000000ff; *am = 0xff000000;
 			break;
 		default:
 			cpu->debugger->flamingDeath("Gpu::masks: Unknown values set in GPU_DISPLAY_ENABLE");
@@ -684,14 +738,14 @@ void Gpu::masks(Dword *rm, Dword *gm, Dword *bm, Dword *am)
 
 int Gpu::pitch() 
 {
-	Dword mod = bits(RegDword(GPU_DISPLAY_SIZE), 29, 20) - 1;
+	Dword mod = bits(taRegs[GPU_DISPLAY_SIZE], 29, 20) - 1;
 	return width() * (bpp() / 8) + (mod * 4);
 }
 
 Dword Gpu::baseAddr() 
 {
-	return RegDword(GPU_DISPLAY_ADDR_ODD) & 0x00fffffc;
-	//return RegDword(GPU_DISPLAY_ADDR_EVEN) & 0x00fffffc;
+	return taRegs[GPU_DISPLAY_ADDR_ODD] & 0x00fffffc;
+	//return taRegs[GPU_DISPLAY_ADDR_EVEN] & 0x00fffffc;
 }
 
 // are we in a sane enough state to attempt a host graphics mode switch?
@@ -705,12 +759,14 @@ bool Gpu::sane()
 
 bool Gpu::taEnabled() 
 {
-	return (RegDword(GPU_VRAM_CFG3) == 0x15d1c951);
+	return (taRegs[GPU_VRAM_CFG3] == 0x15d1c951);
 }
 
 void Gpu::modeChange() 
 {
 	
+	static bool taActive = false; 
+
 	if(!sane()) return;
 	if(width()%32) cpu->debugger->flamingDeath("Gpu::sane: width is not a multiple of 32");
 	
@@ -719,6 +775,9 @@ void Gpu::modeChange()
 	// Switch to 3D mode if necessary
 	if(taEnabled()) 
         {
+		if(taActive) return;
+		taActive = true;
+
 		if(screen != 0) SDL_FreeSurface(screen);
 		
 		SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5);
@@ -726,17 +785,23 @@ void Gpu::modeChange()
 		SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 5);
 		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 		
-		if((screen = SDL_SetVideoMode(width(), height(), bpp(), SDL_OPENGL | SDL_DOUBLEBUF)) == NULL)
+		screen = SDL_SetVideoMode(width(), height(), bpp(), SDL_OPENGL | SDL_DOUBLEBUF);
+
+		if(screen == NULL)
 			cpu->debugger->flamingDeath("Gpu::modeChange: Couldn't set OpenGL video mode to %dx%d, %dbpp!", width(), height(), bpp());
 		
+		char caption[512];
+		sprintf(caption, "%s - %dx%d %dbpp - OpenGL", VERSION_STRING, width(), height(), bpp());
+		SDL_WM_SetCaption(caption, NULL);
+
 		glMatrixMode(GL_PROJECTION);
 		glLoadIdentity();
 		
-		// cpu->debugger->print("Gpu::modeChange: background plane is at %f\n", RegFloat(GPU_REG_BGPLANE_Z));
-		//glFrustum(0, width() / 10.0, 0, height() / 10.0, 1.0, RegFloat(0x22))
-		
-		//gluOrtho2D(0, width(), height(), 0); // XXX: this is wrong...
-		glOrtho(0, width(), height(), 0, -1, 1);
+		//glFrustum(0, width(), 0, height(), -1.0, RegFloat(0x22));
+		//printf("near plane: %f\n", *(float *)&taRegs[0x22]); // typically 0.0001f
+		//glOrtho(0, width(), height(), 0, -1, 1);
+
+		glOrtho(0, width(), height(), 0, -1000.0, 10000.0);
 		
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
@@ -748,11 +813,13 @@ void Gpu::modeChange()
 		glEnable(GL_DEPTH_TEST);
 		
 		glViewport(0, 0, width(), height());
-		SDL_WM_SetCaption(VERSION_STRING " - OpenGL", NULL);
+
 		
 		return;
 	}
 	
+	taActive = false;
+
 	// See if we have a back buffer already made that matches the current GPU settings
 	for(int i=0; i<GPU_MAXBACKBUFFERS; i++) 
         {
@@ -762,7 +829,7 @@ void Gpu::modeChange()
 		   (backBuffers[i]->format->BitsPerPixel == bpp()) &&
 		   (backBuffers[i]->w == width()) &&
 		   (backBuffers[i]->h == height()) ) {
-			// cpu->debugger->print("Gpu::modeChange: reused back buffer for base addr %08x\n", baseAddr());
+			//cpu->debugger->print("Gpu::modeChange: reused back buffer for base addr %08x\n", baseAddr());
 			currBackBuffer = backBuffers[i];
 			break;
 		}
@@ -776,8 +843,7 @@ void Gpu::modeChange()
 		Dword rmask, gmask, bmask, amask;
 		
 		masks(&rmask, &gmask, &bmask, &amask);
-		currBackBuffer = SDL_CreateRGBSurfaceFrom(
-							  (void*)(((Dword)cpu->mmu->videoMem)+baseAddr()),
+		currBackBuffer = SDL_CreateRGBSurfaceFrom((void*)(((Dword)cpu->mmu->videoMem)+baseAddr()),
 							  width(), height(), bpp(),  pitch(),
 							  rmask, gmask, bmask, amask);
 		

@@ -683,8 +683,7 @@ void SHCpu:: SLEEP(Word op)
 {
 	// some programs save SPC/SSR to stack beforehand. 
 	// basically do nothing here. wait forever for an interrupt or reset.
-	// TODO: make this do something
-	//PC+=2;
+	PC+=2; // hack
 	
 	return;
 }
@@ -908,21 +907,21 @@ void SHCpu:: ORM(Word op)
 
 void SHCpu:: OCBWB(Word op)
 {
-	int n = getN(op);
+	//int n = getN(op);
 	// XXX: should this do something?
 	PC+=2;
 }
 
 void SHCpu:: OCBP(Word op)
 {
-	int n = getN(op);
+	//int n = getN(op);
 	// XXX: should this do something?
 	PC+=2;
 }
 
 void SHCpu:: OCBI(Word op)
 {
-	int n = getN(op);
+	//int n = getN(op);
 	// XXX: should this do something?
 	PC+=2;
 }
@@ -2866,14 +2865,14 @@ int SHCpu::build_cl()
 		// recReset(); -> clear recR*M and reset recPtr
 	}
 	
-	char *p;
+	char *p = NULL;
 	Dword tpc = (PC & 0x1fffffff);
 	if ((tpc >= 0x0c000000) && (tpc < 0x0d000000)) {
 		p = (char*)(recRAM+((tpc-0x0c000000)<<1));
 	} else if ((tpc >= 0x00000000) && (tpc < 0x00200000)) {
 		p = (char*)(recROM+((tpc-0x00000000)<<1));
 	}
-	else { printf("Access to illegal mem!\n"); }
+	else { debugger->flamingDeath("Access to illegal mem!\n"); }
 	
 	*((Dword*)p) = (Dword)recPtr;
 	recPC = PC;
@@ -2957,8 +2956,6 @@ void SHCpu::go_rec()
 	sh_instruction_jump_table[0xfffd] = &SHCpu::dispatchSwirlyHook;
     
 	printf("Start execution\n");	
-	
-	Word d;
 	
 	addInterrupt(0x80000, 0);	// first SDL event
 	addInterrupt(0x1000, 1);	// first VBL event

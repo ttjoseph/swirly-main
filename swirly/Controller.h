@@ -76,7 +76,7 @@ class Controller
 	// information (e.g., frame header and identification)
 	Dword keyboard[2];
 	Dword mouse[6];
-	Dword controller[1];
+	Dword controller[2];
 	
 	Dword *deviceData[4];
 };

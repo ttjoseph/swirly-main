@@ -143,8 +143,9 @@ void Controller::updateKeyboardMouse()
 		case SDLK_LEFT:  keyboard[0] = 0x50<<24; break;
 		case SDLK_DOWN:  keyboard[0] = 0x51<<24; break;
 		case SDLK_UP:    keyboard[0] = 0x52<<24; break;
-			
+
 		case SDLK_0: keyboard[0] = 0x27<<24;
+		default: break;
 		}
 
 		if(test>=SDLK_a && test <= SDLK_z) keyboard[0] = (test-93)<<24;
@@ -157,17 +158,22 @@ void Controller::updateKeyboardMouse()
 void Controller::updateJoystick() 
 {
 
+	static bool lctrlPressed = false;
+	static Byte up, down, left, right; 
+
+	// XXX: improve analog button code. (not just as a linear function)
+	// XXX: add right/left trigger and second joystick code
+
 	SDL_Event e;
 	SDL_PollEvent(&e);
 	
-	controller[0] = ~0;
-	
-	// XXX: analog buttons ... 
+	controller[0] = ~0;         
+	controller[1] = 0x80808080; 
 	
 	switch(e.type) 
 	{
 	case SDL_KEYDOWN:
-		
+
 		switch(e.key.keysym.sym) 
                 {
 		case SDLK_a:      controller[0] &= ~CONT_A; break;
@@ -175,11 +181,63 @@ void Controller::updateJoystick()
 		case SDLK_d:      controller[0] &= ~CONT_X; break;
 		case SDLK_f:      controller[0] &= ~CONT_Y; break;
 		case SDLK_SPACE:  controller[0] &= ~CONT_Z; break;
-		case SDLK_LEFT:   controller[0] &= ~CONT_LEFT; break;
-		case SDLK_RIGHT:  controller[0] &= ~CONT_RIGHT; break;
-		case SDLK_UP:     controller[0] &= ~CONT_UP; break;
-		case SDLK_DOWN:   controller[0] &= ~CONT_DOWN; break;
+
+		case SDLK_LEFT:   
+			if(lctrlPressed) 
+                        {
+				if(left!=0x00) left -= 1;
+				controller[1] |= left;
+				controller[1] &= 0x8080807f;
+			}
+			else    controller[0] &= ~CONT_LEFT; 
+			break;
+		case SDLK_RIGHT:
+			if(lctrlPressed) 
+                        {
+				if(right!=0xff) right += 1;
+				controller[1] |= right;
+			}
+			else    controller[0] &= ~CONT_RIGHT; 
+			break;
+		case SDLK_UP:   
+			if(lctrlPressed) 
+                        {
+				if(up!=0x00) up -= 1; 
+				controller[1] |= (up << 8);
+				controller[1] &= 0x80807f80;
+			} 
+			else    controller[0] &= ~CONT_UP; 
+			break;
+		case SDLK_DOWN:   
+			if(lctrlPressed) 
+                        {
+				if(down!=0xff) down += 1;
+				controller[1] |= (down << 8);
+			}
+			else    controller[0] &= ~CONT_DOWN; 
+			break;
+
 		case SDLK_RETURN: controller[0] &= ~CONT_START; break;
+
+		case SDLK_LCTRL:  lctrlPressed = true; break;
+		default: break;
 		}
+		break;
+	case SDL_KEYUP:
+
+		// reset analog buttons if "released"
+		switch(e.key.keysym.sym) 
+		{
+		case SDLK_LCTRL:  
+			lctrlPressed = false; 
+			up = 0x80; down = 0x80; left = 0x80; right = 0x80;
+			break;
+		case SDLK_LEFT:  left  = 0x80; break;
+		case SDLK_RIGHT: right = 0x80; break;
+		case SDLK_UP:    up    = 0x80; break;
+		case SDLK_DOWN:  down  = 0x80; break;
+		default: break;
+		}
+		break;
 	}
 }

@@ -17,7 +17,7 @@ void SHIntc::externalInt(int irqnr, int ivt)
 {
 	if (cpu->SR&F_SR_BL) return;
 
-	if ((15-irqnr) > ((cpu->SR >> 4) & 0xf)) {
+	if ((Dword)(15-irqnr) > ((cpu->SR >> 4) & 0xf)) {
 		cpu->SPC = cpu->PC;
 		cpu->SSR = cpu->SR;
 		CCNREG(INTEVT) = ivt; 
@@ -28,7 +28,7 @@ void SHIntc::externalInt(int irqnr, int ivt)
 
 void SHIntc::internalInt(int_source is, int ivt)
 {
-	int IPL_irq;
+	Dword IPL_irq = 0;
 	
 	if (cpu->SR&F_SR_BL) return;
 	
@@ -44,6 +44,7 @@ void SHIntc::internalInt(int_source is, int ivt)
 	case DMAC: IPL_irq = (IPRC >> 8) & 0xf; break;
 	case SCIF: IPL_irq = (IPRC >> 4) & 0xf; break;
 	case UDI:  IPL_irq = (IPRC >> 0) & 0xf; break;
+	default: cpu->debugger->flamingDeath("Unknown interrupt in SHIntc::internalInt");
 	}
 	
 	if (IPL_irq > ((cpu->SR >> 4) & 0xf)) {
