@@ -19,12 +19,16 @@ using namespace std;
 float shfpu_sop0, shfpu_sop1, shfpu_sresult;
 double shfpu_dop0, shfpu_dop1, shfpu_dresult;
 
-void  (SHCpu::*sh_instruction_jump_table[0x10000])(Word);
-void  (SHCpu::*sh_recompile_jump_table[0x10000])(Word);
+void (SHCpu::*sh_instruction_jump_table[0x10000])(Word);
+void (SHCpu::*sh_recompile_jump_table[0x10000])(Word);
 
-static opcode_handler_struct sh_opcode_handler_table[] =
-{
-/*   function                      mask    match */
+// used for Swirly hooks
+#define HOOK_GDROM 1
+#define HOOK_LOAD1STREAD 2
+
+static opcode_handler_struct sh_opcode_handler_table[] = {
+
+	/*   function                      mask    match */
 	{&SHCpu::ADDI                , 0xf000, 0x7000},
 	{&SHCpu::BRA                 , 0xf000, 0xa000},
 	{&SHCpu::BSR                 , 0xf000, 0xb000},
@@ -198,7 +202,7 @@ static opcode_handler_struct sh_opcode_handler_table[] =
 	{&SHCpu::STSMACH             , 0xf0ff, 0x000a},
 	{&SHCpu::STSMACL             , 0xf0ff, 0x001a},
 	{&SHCpu::STSPR               , 0xf0ff, 0x002a},
-	{&SHCpu::STSFPSCR            , 0xf0ff, 0x006a},
+	{&SHCpu::STSFPSCR            , 0xf0ff, 0x006a}, 
 	{&SHCpu::STSFPUL             , 0xf0ff, 0x005a},
 	{&SHCpu::STSMMACH            , 0xf0ff, 0x4002},
 	{&SHCpu::STSMMACL            , 0xf0ff, 0x4012},
@@ -228,16 +232,16 @@ static opcode_handler_struct sh_opcode_handler_table[] =
 	{&SHCpu::SETT                , 0xffff, 0x0018},
 	{&SHCpu::LDTLB               , 0xffff, 0x0038},
 	{&SHCpu::SLEEP               , 0xffff, 0x001b},
-	{&SHCpu::FSCA                , 0xf1ff, 0xf0fd},	// XXX: is this correct ???
+	{&SHCpu::FSCA                , 0xf1ff, 0xf0fd}, // XXX: is this correct ???
 	{&SHCpu::FTRV                , 0xf3ff, 0xf1fd},
 	{&SHCpu::FRCHG               , 0xffff, 0xfbfd},
 	{&SHCpu::FSCHG               , 0xffff, 0xf3fd},
-	{&SHCpu::dispatchSwirlyHook  , 0xffff, 0xfffd}	// last entry
+	{&SHCpu::dispatchSwirlyHook  , 0xffff, 0xfffd}  // last entry
 };
 
 static opcode_handler_struct sh_recompile_handler_table[] =
 {
-/*   function                      mask    match */
+	/*   function                      mask    match */
 	{&SHCpu::recBranch           , 0xf0ff, 0x400b},
 	{&SHCpu::recBranch           , 0xf000, 0xa000},
 	{&SHCpu::recBranch           , 0xff00, 0x8b00},
@@ -257,9 +261,11 @@ static opcode_handler_struct sh_recompile_handler_table[] =
 };
 
 
-SHCpu::SHCpu()
+SHCpu::SHCpu(Dword setting)
 {
+	
 	mmu = new SHMmu(this);
+	modem = new Modem(this);
 	debugger = new Debugger(this);
 	gpu = new Gpu(this);
 	tmu = new SHTmu(this);
@@ -270,13 +276,15 @@ SHCpu::SHCpu()
 	//gdrom = new Gdrom(this, 13986);
 	gdrom = new Gdrom(this, 0);
 	spu = new Spu(this);
-	maple = new Maple(this);
+	maple = new Maple(this, setting);
+	overlord = new Overlord(this);
 	branch = 0;
 	reset();
 }
 
 SHCpu::~SHCpu()
 {
+	delete modem;
 	delete mmu;
 	delete debugger;
 	delete gpu;
@@ -288,37 +296,40 @@ SHCpu::~SHCpu()
 	delete gdrom;
 	delete spu;
 	delete maple;
+	delete overlord;
 }
 
 // allows programs running on Swirly to hook into Swirly
 // i.e. the GDROM - I don't know the proper hardware interface
 // to it, but we can simulate it through faked syscalls.
 // Obviously, this is not present on a real DC.
-void SHCpu::dispatchSwirlyHook(Word op)
+void SHCpu::dispatchSwirlyHook(Word op) 
 {
+
 	Word hookId = mmu->fetchInstruction(PC+2);
 	/*
-	How to do a swirly hook
-
-	.word 0xfffd	! invoke hook
-	.word 1			! hook id=1
-
-	The hook will get its parameters from the registers.  0xfffd is
-	the SH4 undefined instruction, so we shouldn't have any conflict
-	with real software.
+	  How to do a swirly hook
+	  
+	  .word 0xfffd	! invoke hook
+	  .word 1			! hook id=1
+	  
+	  The hook will get its parameters from the registers.  0xfffd is
+	  the SH4 undefined instruction, so we shouldn't have any conflict
+	  with real software.
 	*/
-
-	switch(hookId)
-	{
+	
+	switch(hookId) 
+        {
 	case HOOK_GDROM:
 		gdrom->hook();
 		break;
-	case HOOK_LOAD1STREAD:
-	{
+	case HOOK_LOAD1STREAD: {
 		debugger->print("HOOK_LOAD1STREAD: loading 1ST_READ.BIN\n");
-
+		
 		int startoffs = (R[4] - gdrom->startSector())* gdrom->sectorSize;
+
 		debugger->print("HOOK_LOAD1STREAD: startoffs = %08x = %d * %d\n", startoffs, gdrom->startSector(), gdrom->sectorSize);
+		
 		Overlord::loadAndDescramble(gdrom->cdImage, startoffs, R[5], this, 0x8c010000);
 		debugger->print("HOOK_LOAD1STREAD: done loading 1ST_READ.BIN\n");
 	}
@@ -326,7 +337,7 @@ void SHCpu::dispatchSwirlyHook(Word op)
 	default:
 		debugger->flamingDeath("SHCpu::dispatchSwirlyHook: Invalid Swirly hook - %d", hookId);
 	}
-
+	
 	PC+=4;
 }
 
@@ -398,8 +409,8 @@ void SHCpu:: TSTM(Word op)
 
 void SHCpu:: TRAPA(Word op)
 {
-    /* TODO: this gets uncommented when we do exceptions*/
-    SSR=SR;
+	/* TODO: this gets uncommented when we do exceptions*/
+	SSR=SR;
 	SPC=PC+2;
 	setSR(SR|F_SR_MD|F_SR_BL|F_SR_RB);
 	mmu->writeDword(0xff000000|TRA, (op&0xff)<<2);
@@ -670,19 +681,12 @@ void SHCpu:: STCMRBANK(Word op)
 
 void SHCpu:: SLEEP(Word op)
 {
-        //PC+=2;
-
-        // basically do nothing here. wait for an interrupt or reset.
-        // hack--emulate an interrupt
-        SPC=PC;
-	SSR=SR;
-        (*(Dword *)(ccnRegs+INTEVT)) = 0x1c0;
+	// some programs save SPC/SSR to stack beforehand. 
+	// basically do nothing here. wait forever for an interrupt or reset.
+	// TODO: make this do something
+	//PC+=2;
 	
-	SR |= F_SR_MD;
-	SR |= F_SR_RB;
-	SR |= F_SR_BL;
-	
-	PC=VBR+0x600;
+	return;
 }
 
 void SHCpu:: SHLR(Word op)
@@ -873,13 +877,13 @@ void SHCpu:: ROTCL(Word op)
 	PC+=2;
 }
 
-void SHCpu:: PREF(Word op)
+void SHCpu::PREF(Word op)
 {
 	int n = getN(op);
 	if((R[n] & 0xfc000000) == 0xe0000000) // is this a store queue write?
 		mmu->storeQueueSend(R[n]);
-	else
-	        printf("Unknown PREF access: %08x\n", R[n]);
+	//else
+	//	printf("PREF: %x\n", R[n]);
 	PC+=2;
 }
 
@@ -1053,7 +1057,7 @@ void SHCpu:: MOVLL4(Word op)
 	R[n]=mmu->readDword(dest);
 	PC+=2;
 }
-	
+
 
 void SHCpu:: MOVBLG(Word op)
 {
@@ -1174,6 +1178,7 @@ void SHCpu:: MOVLL(Word op) // mov.l @Rm, Rn
 {
 	int m = getM(op), n = getN(op);
 	R[n]= mmu->readDword(R[m]);
+	//printf("PC is %08x, new PC is %08x\n", PC, PC+2);
 	PC+=2;
 }
 
@@ -1303,78 +1308,78 @@ void SHCpu:: MACW(Word op)
 void SHCpu:: DO_MACL(Word op)
 {
 	int m = getM(op), n = getN(op);
-/*
-	Dword rnl, rnh, rml, rmh, r0, r1, r2, t0, t1, t2, t3;
-	Sdword tm, tn, fnlml;
-	tn=(Sdword)mmu->readDword(R[n]);
-	tm=(Sdword)mmu->readDword(R[m]);
-	R[n]+=4;
-	R[m]+=4;
-	if((Sdword)(tn^tm)<0) fnlml=-1; else fnlml=0;
-	if(tn<0) tn=0-tn;
-	if(tm<0) tm=0-tm;
-	t1=(Dword)tn;
-	t2=(Dword)tm;
-	rnl=t1&0xffff;
-	rnh=(t1>>16)&0xffff;
-	rml=t2&0xffff;
-	rmh=(t2>>16)&0xffff;
-	t0=rml*rnl;
-	t1=rmh*rnl;
-	t2=rml*rnh;
-	t3=rmh*rnh;
-	r2=0;
-	r1=t1+t2;
-	if(r1<t1)r2+=0x10000;
-	t1=(r1<<16)&0xffff0000;
-	r0=t0+t1;
-	if(r0<t0)r2++;
-	r2=r2+((r1>>16)&0xffff)+t3;
-	if(fnlml<0)
-	{
-		r2=~r2;
-		if(r0==0)r2++;
-		else r0=(~r0)+1;
-	}
-	if(S==1)
-	{
-		r0=MACL+r0;
-		if(MACL>r0)r2++;
-		if(MACH&0x8000);
-		else r2+=MACH|0xffff0000;
-		r2+=MACH&0x7fff;
-		if(((Sdword)r2<0)&&(r2<0xffff8000))
-		{
-			r2=0xffff8000;
-			r0=0;
-		}
-		if(((Sdword)r2>0)&&(r2>0x7fff))
-		{
-			r2=0x7fff;
-
-			r0=0xffffffff;
-		}
-		MACH=(r2&0xffff)|(MACH&0xffff0000);
-		MACL=r0;
-	}
-	else
-	{
-		r0=MACL+r0;
-		if(MACL>r0)r2++;
-		r2+=MACH;
-		MACH=r2;
-		MACL=r0;
-	}
-	PC+=2;
+	/*
+	  Dword rnl, rnh, rml, rmh, r0, r1, r2, t0, t1, t2, t3;
+	  Sdword tm, tn, fnlml;
+	  tn=(Sdword)mmu->readDword(R[n]);
+	  tm=(Sdword)mmu->readDword(R[m]);
+	  R[n]+=4;
+	  R[m]+=4;
+	  if((Sdword)(tn^tm)<0) fnlml=-1; else fnlml=0;
+	  if(tn<0) tn=0-tn;
+	  if(tm<0) tm=0-tm;
+	  t1=(Dword)tn;
+	  t2=(Dword)tm;
+	  rnl=t1&0xffff;
+	  rnh=(t1>>16)&0xffff;
+	  rml=t2&0xffff;
+	  rmh=(t2>>16)&0xffff;
+	  t0=rml*rnl;
+	  t1=rmh*rnl;
+	  t2=rml*rnh;
+	  t3=rmh*rnh;
+	  r2=0;
+	  r1=t1+t2;
+	  if(r1<t1)r2+=0x10000;
+	  t1=(r1<<16)&0xffff0000;
+	  r0=t0+t1;
+	  if(r0<t0)r2++;
+	  r2=r2+((r1>>16)&0xffff)+t3;
+	  if(fnlml<0)
+	  {
+	  r2=~r2;
+	  if(r0==0)r2++;
+	  else r0=(~r0)+1;
+	  }
+	  if(S==1)
+	  {
+	  r0=MACL+r0;
+	  if(MACL>r0)r2++;
+	  if(MACH&0x8000);
+	  else r2+=MACH|0xffff0000;
+	  r2+=MACH&0x7fff;
+	  if(((Sdword)r2<0)&&(r2<0xffff8000))
+	  {
+	  r2=0xffff8000;
+	  r0=0;
+	  }
+	  if(((Sdword)r2>0)&&(r2>0x7fff))
+	  {
+	  r2=0x7fff;
+	  
+	  r0=0xffffffff;
+	  }
+	  MACH=(r2&0xffff)|(MACH&0xffff0000);
+	  MACL=r0;
+	  }
+	  else
+	  {
+	  r0=MACL+r0;
+	  if(MACL>r0)r2++;
+	  r2+=MACH;
+	  MACH=r2;
+	  MACL=r0;
+	  }
+	  PC+=2;
 	*/
-
+	
 	debugger->flamingDeath("Untested MACL implementation invoked");
-//	shcpu_DO_MACL(R[n], R[m], &MACH, &MACL);
-
+	//	shcpu_DO_MACL(R[n], R[m], &MACH, &MACL);
+    
 	if(S==1)
 	{
 		// do saturation at bit 48
-		switch(Overlord::bits(MACH, 31, 16))
+		switch(bits(MACH, 31, 16))
 		{
 		case 0x0000:
 		case 0xffff:
@@ -1582,7 +1587,7 @@ void SHCpu:: JSR(Word op)
 	oldpc = PC;
 	delaySlot();
 	PR=oldpc+4;
-
+	
 	debugger->reportBranch("jsr", PC, temp);
 	PC=temp;
 }
@@ -1646,7 +1651,7 @@ void SHCpu:: EXTSB(Word op)
 void SHCpu:: EXTSW(Word op)
 {
 	int m = getM(op), n = getN(op);
-	R[n]=	((R[m]&0x8000)==0) ? R[m]&0xffff : R[m] | 0xffff0000;
+	R[n]= ((R[m]&0x8000)==0) ? R[m]&0xffff : R[m] | 0xffff0000;
 	PC+=2;
 }
 
@@ -1742,26 +1747,26 @@ void SHCpu:: DIV1(Word op)
 	case 1:
 		switch(M)
 		{
-			case 0:
-				t0=R[n];
-				R[n]+=t2;
-				t1=(R[n]<t0);
-				switch(Q)
-				{
-				case 0: Q=t1; break;
-				case 1: Q=(Byte)(t1==0); break;
-				}
-				break;
-			case 1:
-				t0=R[n];
-				R[n]-=t2;
-				t1=(R[n]>t0);
-				switch(Q)
-				{
-				case 0: Q=(Byte)(t1==0); break;
-				case 1: Q=t1; break;
-				}
-				break;
+		case 0:
+			t0=R[n];
+			R[n]+=t2;
+			t1=(R[n]<t0);
+			switch(Q)
+			{
+			case 0: Q=t1; break;
+			case 1: Q=(Byte)(t1==0); break;
+			}
+		    break;
+		case 1:
+			t0=R[n];
+			R[n]-=t2;
+			t1=(R[n]>t0);
+			switch(Q)
+			{
+			case 0: Q=(Byte)(t1==0); break;
+			case 1: Q=t1; break;
+			}
+			break;
 		}
 		break;
 	}
@@ -1778,17 +1783,17 @@ void SHCpu:: DIV0U(Word op)
 void SHCpu:: DIV0S(Word op)
 {
 	int m = getM(op), n = getN(op);
-	
+    
 	if((R[n] & 0x80000000) == 0)
 		setSR(SR & ~F_SR_Q);
 	else
 		setSR(SR | F_SR_Q);
-
+	
 	if((R[m] & 0x80000000) == 0)
 		setSR(SR & ~F_SR_M);
 	else
 		setSR(SR | F_SR_M);
-		
+	
 	if(!(((SR&F_SR_M)!=0)==((SR&F_SR_Q)!=0)))
 		setSR(SR | F_SR_T);
 	else
@@ -1810,15 +1815,10 @@ void SHCpu:: CMPSTR(Word op)
 	int m = getM(op), n = getN(op);
 	Dword foo;
 	foo = R[m] ^ R[n];
-	if
-	(
-		(
-			((foo&0xff000000)>>24) &&
-			((foo&0xff0000)>>16) &&
-			((foo&0xff00)>>8) &&
-			(foo&0xff)
-		) == 0
-	)
+	if((((foo&0xff000000)>>24) &&
+	  ((foo&0xff0000)>>16) &&
+	  ((foo&0xff00)>>8) &&
+	  (foo&0xff)) == 0)
 		setSR(SR | F_SR_T);
 	else
 		setSR(SR & ~F_SR_T);		
@@ -1847,9 +1847,9 @@ void SHCpu:: CMPPL(Word op)
 void SHCpu:: CMPHS(Word op)
 {
 	int m = getM(op), n = getN(op);
-	if(R[n] >= R[m])
+	if(R[n] >= R[m]) 
 		setSR(SR | F_SR_T);
-	else
+	else 
 		setSR(SR & ~F_SR_T);
 	PC+=2;
 }
@@ -1867,6 +1867,7 @@ void SHCpu:: CMPHI(Word op)
 void SHCpu:: CMPGT(Word op)
 {
 	int m = getM(op), n = getN(op);
+	
 	if((Sdword)R[n] > (Sdword)R[m])
 		setSR(SR | F_SR_T);
 	else
@@ -1891,10 +1892,10 @@ void SHCpu:: CMPEQ(Word op)
 		setSR(SR | F_SR_T);
 	else
 		setSR(SR & ~F_SR_T);
-/*		T=1;
-	else
-		T=0;
-*/	PC+=2;
+	/*		T=1;
+			else
+			T=0;
+	*/	PC+=2;
 }
 
 void SHCpu:: CLRT(Word op)
@@ -1937,8 +1938,8 @@ void SHCpu:: BT(Word op) // no delay slot!
 {
 	Dword dest;
 	dest = PC + 4 + (((Sdword) (Sbyte) (op&0xff)) * 2);
-	if((SR & F_SR_T)==1)
-	{
+	if(SR & F_SR_T) 
+        {
 		debugger->reportBranch("bt", PC, dest);
 		PC=dest;
 	}
@@ -2009,7 +2010,7 @@ void SHCpu:: BFS(Word op)
 		debugger->reportBranch("bfs", PC, dest);
 		PC=dest;
 	}
-	else
+	else 
 	{
 		delaySlot();
 		PC=oldpc+4;
@@ -2106,10 +2107,10 @@ void SHCpu::FABS(Word op)
 {
 	int n = getN(op);
 	FPU_DP_FIX_N();
-
+	
 	if(FPU_DP()) // double-precision
 		DR[n] = fabs(DR[n]);
-		//*(((Qword*)DR)+n) &= 0x7fffffffffffffff;
+	//*(((Qword*)DR)+n) &= 0x7fffffffffffffff;
 	else // single-precision
 		//FR[n] = (float) fabs((double) FR[n]);
 		*(((Dword*) FR)+n) &= 0x7fffffff;
@@ -2119,31 +2120,32 @@ void SHCpu::FABS(Word op)
 void SHCpu::FADD(Word op)
 {
 	int m = getM(op), n = getN(op);
-//	FPU_DP_FIX_MN();
-
-	if(FPU_DP()) // double-precision
-	{
-		cnv_dbl tmpa, tmpb;
-		tmpa.i[1] = FR_Dwords[n];
-		tmpa.i[0] = FR_Dwords[n+1];
-		tmpb.i[1] = FR_Dwords[m];
-		tmpb.i[0] = FR_Dwords[m+1];
-		//printf("FADD: %f * %f = ", tmpa.d, tmpb.d);
-		tmpa.d += tmpb.d;
-		//printf("%f\n", tmpa.d);
-		FR_Dwords[n] = tmpa.i[1];
-		FR_Dwords[n+1] = tmpa.i[0];
-//		DR[n]+=DR[m];
-	} else // single-precision
-		FR[n]+=FR[m];
-	PC+=2;
+	//	FPU_DP_FIX_MN();
+	
+    if(FPU_DP()) // double-precision
+    {
+	    cnv_dbl tmpa, tmpb;
+	    tmpa.i[1] = FR_Dwords[n];
+	    tmpa.i[0] = FR_Dwords[n+1];
+	    tmpb.i[1] = FR_Dwords[m];
+	    tmpb.i[0] = FR_Dwords[m+1];
+	    //printf("FADD: %f * %f = ", tmpa.d, tmpb.d);
+	    tmpa.d += tmpb.d;
+	    //printf("%f\n", tmpa.d);
+	    FR_Dwords[n] = tmpa.i[1];
+	    FR_Dwords[n+1] = tmpa.i[0];
+	    //		DR[n]+=DR[m];
+    } 
+    else // single-precision
+	    FR[n]+=FR[m];
+    PC+=2;
 }
 
 void SHCpu::FMUL(Word op)
 {
 	int m = getM(op), n = getN(op);
-//	FPU_DP_FIX_MN();
-
+	//	FPU_DP_FIX_MN();
+	
 	if(FPU_DP()) // double-precision
 	{
 		cnv_dbl tmpa, tmpb;
@@ -2156,15 +2158,15 @@ void SHCpu::FMUL(Word op)
 		//printf("%f\n", tmpa.d);
 		FR_Dwords[n] = tmpa.i[1];
 		FR_Dwords[n+1] = tmpa.i[0];
-//		DR[n]*=DR[m];
+		//		DR[n]*=DR[m];
 	}
 	else // single-precision
 	{
-//		shfpu_sop0 = FR[n];
-//		shfpu_sop1 = FR[m];
+		//		shfpu_sop0 = FR[n];
+		//		shfpu_sop1 = FR[m];
 		FR[n]*=FR[m];
-//		shfpu_sFMUL();
-//		FR[n] = shfpu_sresult;
+		//		shfpu_sFMUL();
+		//		FR[n] = shfpu_sresult;
 	}
 	PC+=2;
 }
@@ -2174,7 +2176,7 @@ void SHCpu::FMUL(Word op)
 void SHCpu::setFPSCR(Dword d)
 {
 	FPSCR = d;
-
+	
 	if(d & F_FPSCR_FR)
 	{
 		// bank 1 selected
@@ -2194,17 +2196,19 @@ void SHCpu::setFPSCR(Dword d)
 	
 	FR_Dwords = (Dword*)FR;
 	XF_Dwords = (Dword*)XF;
-//	shfpu_setContext(FR, XF, (float*)&FPUL, &FPSCR);
+	//	shfpu_setContext(FR, XF, (float*)&FPUL, &FPSCR);
 }
 
 void SHCpu::FMOV(Word op)
 {
 	int m = getM(op), n = getN(op);
-
-	if(FPU_SZ()) {
+	
+	if(FPU_SZ()) 
+	{
 		n &= 0xe; m &= 0xe;
 		// split up in different instructions
-		switch(op&0x0110) {
+		switch(op&0x0110) 
+                {
 		case 0x0000:	// FMOV DRm, DRn
 			FR_Dwords[n] = FR_Dwords[m];
 			FR_Dwords[n+1] = FR_Dwords[m+1];
@@ -2231,7 +2235,7 @@ void SHCpu::FMOV(Word op)
 void SHCpu::FMOV_STORE(Word op)
 {
 	int m = getM(op), n = getN(op);
-
+	
 	if(FPU_SZ()) // double-precision
 	{
 		m &= 0xe;
@@ -2254,7 +2258,7 @@ void SHCpu::FMOV_STORE(Word op)
 void SHCpu::FMOV_LOAD(Word op)
 {
 	int m = getM(op), n = getN(op);
-
+    
 	if(FPU_SZ()) // double-precision
 	{
 		n &= 0xe;
@@ -2277,7 +2281,7 @@ void SHCpu::FMOV_LOAD(Word op)
 void SHCpu::FMOV_RESTORE(Word op)
 {
 	int m = getM(op), n = getN(op);
-
+    
 	if(FPU_SZ()) // double-precision
 	{
 		n &= 0xe;
@@ -2304,7 +2308,7 @@ void SHCpu::FMOV_RESTORE(Word op)
 void SHCpu::FMOV_SAVE(Word op)
 {
 	int m = getM(op), n = getN(op);
-
+    
 	if(FPU_SZ()) // double-precision
 	{
 		R[n]-=8;
@@ -2331,7 +2335,7 @@ void SHCpu::FMOV_SAVE(Word op)
 void SHCpu::FMOV_INDEX_LOAD(Word op)
 {
 	int m = getM(op), n = getN(op);
-
+    
 	if(FPU_SZ()) // double-precision
 	{
 		n &= 0xe;
@@ -2354,7 +2358,7 @@ void SHCpu::FMOV_INDEX_LOAD(Word op)
 void SHCpu::FMOV_INDEX_STORE(Word op)
 {
 	int m = getM(op), n = getN(op);
-	
+    
 	if(FPU_SZ()) // double-precision
 	{
 		m &= 0xe;
@@ -2378,7 +2382,7 @@ void SHCpu::FCMPEQ(Word op)
 {
 	int m = getM(op), n = getN(op);
 	FPU_DP_FIX_MN();
-
+	
 	if(FPU_DP()) // double-precision
 	{
 		if(DR[m] == DR[n])
@@ -2400,7 +2404,7 @@ void SHCpu::FCMPGT(Word op)
 {
 	int m = getM(op), n = getN(op);
 	FPU_DP_FIX_MN();
-
+    
 	if(FPU_DP())
 	{
 		// double-precision
@@ -2424,7 +2428,7 @@ void SHCpu::FCNVSD(Word op)
 {
 	int n = getN(op);
 	FPU_DP_FIX_N();
-
+    
 	DR[n] = (double) FPUL;
 	PC+=2;
 }
@@ -2432,8 +2436,8 @@ void SHCpu::FCNVSD(Word op)
 void SHCpu::FDIV(Word op)
 {
 	int m = getM(op), n = getN(op);
-//	FPU_DP_FIX_MN();
-
+	//	FPU_DP_FIX_MN();
+    
 	if(FPSCR & F_FPSCR_PR)
 	{
 		cnv_dbl tmpa, tmpb;
@@ -2443,7 +2447,7 @@ void SHCpu::FDIV(Word op)
 		tmpa.d /= tmpb.d;
 		//printf("%f\n", tmpa.d);
 		FR_Dwords[n] = tmpa.i[1]; FR_Dwords[n+1] = tmpa.i[0];
-//		DR[n] /= DR[m];
+		//		DR[n] /= DR[m];
 	}
 	else
 		FR[n] /= FR[m];
@@ -2474,22 +2478,23 @@ void SHCpu::FLDS(Word op)
 void SHCpu::FLOAT(Word op)
 {
 	int n = getN(op);
-//	FPU_DP_FIX_N();
-	if(FPU_DP()) {
+	//	FPU_DP_FIX_N();
+	if(FPU_DP()) 
+        {
 		cnv_dbl tmpa;
 		tmpa.d = (double)*((signed int*)&FPUL);
 		FR_Dwords[n] = tmpa.i[1];
 		FR_Dwords[n+1] = tmpa.i[0];
-//		DR[n] = (double)*((float*)(signed int*)&FPUL);
-//		DR[n] = (double)*((signed int*)&FPUL);
+		//		DR[n] = (double)*((float*)(signed int*)&FPUL);
+		//		DR[n] = (double)*((signed int*)&FPUL);
 	}
 	else
 	{
-//		shfpu_sFLOAT();
-//		FR[n] = shfpu_sresult;
+		//		shfpu_sFLOAT();
+		//		FR[n] = shfpu_sresult;
 		FR[n] = (float)*((signed int*)&FPUL);
 	}
-	PC+=2;
+    PC+=2;
 }
 
 void SHCpu::FMAC(Word op)
@@ -2504,7 +2509,8 @@ void SHCpu::FCNVDS(Word op)
 	int n = getN(op);
 	FPU_DP_FIX_N();
 	if(FPU_DP())
-		FPUL = (float) DR[n];
+		//FPUL = (float) DR[n];
+		FPUL = (Dword)DR[n];
 	else
 		debugger->flamingDeath("FCNVDS: Can't access DR regs when double-prec is off");
 	PC+=2;
@@ -2560,14 +2566,15 @@ void SHCpu::FSUB(Word op)
 	else
 		FR[n]-=FR[m];
 	PC+=2;
-
+    
 }
 
 void SHCpu::FTRC(Word op)
 {
 	int n = getN(op);
-//	FPU_DP_FIX_N();
-	if(FPU_DP()) {
+	//	FPU_DP_FIX_N();
+	if(FPU_DP()) 
+        {
 		n &= 0xe;
 		cnv_dbl tmpa;
 		tmpa.i[1] = FR_Dwords[n];
@@ -2575,13 +2582,14 @@ void SHCpu::FTRC(Word op)
 		//printf("FTRC: %f = ", tmpa.d);
 		FPUL = (Dword)(tmpa.d);	// XXX: (float) - always truncates too much
 		//printf(" %08x (%d)\n", FPUL, FPUL);
-//		FPUL = (float) DR[n];
+		//		FPUL = (float) DR[n];
 	}
-	else {
+	else 
+        {
 		FPUL = (Dword)FR[n];
-//		FPUL = FR[n];
+		//		FPUL = FR[n];
 	}
-	PC+=2;
+    PC+=2;
 }
 
 void SHCpu::FSCA(Word op)
@@ -2607,9 +2615,9 @@ void SHCpu::FTRV(Word op)
 	float tmp[4];
 	tmp[0] = FR[n]; tmp[1] = FR[n+1]; tmp[2] = FR[n+2]; tmp[3] = FR[n+3];
 	for (int i = 0; i < 4; i++)
-	{
-		FR[n+i] = XF[0+i]*tmp[0] + XF[4+i]*tmp[1] + XF[8+i]*tmp[2] + XF[12+i]*tmp[3];
-	}
+		{
+			FR[n+i] = XF[0+i]*tmp[0] + XF[4+i]*tmp[1] + XF[8+i]*tmp[2] + XF[12+i]*tmp[3];
+		}
 	PC+=2;
 }
 
@@ -2622,7 +2630,7 @@ void SHCpu::LDTLB(Word op)
 void SHCpu::setSR(Dword d)
 {
 	Dword *oldR = R;
-
+	
 	if(d & F_SR_MD)
 	{
 		// set the register banks
@@ -2656,18 +2664,18 @@ void SHCpu::setSR(Dword d)
 void SHCpu::delaySlot()
 {
 	Word d;
-
+    
 	/*
-	Slot illegal instructions:
-
-	JMP JSR BRA BRAF BSR BSRF RTS RTE BT/S BF/S 0xFFFD
-	BT BF	TRAPA MOVA
-	LDC Rm, SR
-	LDC.L @Rm+, SR
-
-	PC-relative MOV instructions
+	  Slot illegal instructions:
+	  
+	  JMP JSR BRA BRAF BSR BSRF RTS RTE BT/S BF/S 0xFFFD
+	  BT BF	TRAPA MOVA
+	  LDC Rm, SR
+	  LDC.L @Rm+, SR
+	  
+	  PC-relative MOV instructions
 	*/
-
+	
 	d = mmu->fetchInstruction(PC+2);
 	// only check for slot illegal if we're actually executing
 	/*
@@ -2681,8 +2689,8 @@ void SHCpu::delaySlot()
 	case 0x0003: // BSRF
 	case 0x400e: // LDC Rm, SR
 	case 0x4007: // LDC @Rm+, SR
-		exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
-		return;
+	exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
+	return;
 	}
 	switch(d&0xff00)
 	{
@@ -2692,8 +2700,8 @@ void SHCpu::delaySlot()
 	case 0x8d00: // BT/S
 	case 0xc300: // TRAPA
 	case 0xc700: // MOVAa
-		exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
-		return;
+	exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
+	return;
 	}
 	switch(d&0xf000)
 	{
@@ -2701,19 +2709,19 @@ void SHCpu::delaySlot()
 	case 0xb000: // BSR
 	case 0x9000: // MOVWI
 	case 0xd000: // MOVLI
-		exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
-		return;
+	exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
+	return;
 	}
 	switch(d)
 	{
 	case 0x000b: // RTS
 	case 0x002b: // RTE
 	case 0xfffd: // undefined instruction
-		exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
-		return;
+	exception(E_SLOT_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
+	return;
 	}
 	*/
-
+    
 	executeInstruction(d);
 }
 
@@ -2730,82 +2738,75 @@ void SHCpu::reset()
 	numIterations = 0;
 }
 
-// Executes a single instruction.
-// This is a really stupid way to do this, unless the compiler
-// somehow transforms this crap into reasonably fast code.
-void SHCpu::executeInstruction(Word d)
+void SHCpu::executeInstruction(Word d) 
 {
 	(this->*sh_instruction_jump_table[d])(d);
 }
 
 // starts executing instructions
-void SHCpu::go()
+void SHCpu::go() 
 {
-    opcode_handler_struct *ostruct;
-	int i;
 
-	printf("Building Jumptable\n");	
-	for(i = 0; i < 0x10000; i++)
-	{
+	int i;
+	opcode_handler_struct *ostruct;
+	
+	printf("Building interpretative CPU jumptable\n");
+	for(i = 0; i < 0x10000; i++) 
+        {
 		/* default to illegal */
 		sh_instruction_jump_table[i] = &SHCpu::unknownOpcode;
-    }
-
+	}
+	
 	ostruct = sh_opcode_handler_table;
-	do
-	{
-		for(i = 0;i < 0x10000;i++)
-		{
-			if((i & ostruct->mask) == ostruct->match)
-            {
+	do {
+		for(i=0;i<0x10000;i++) 
+                {
+			if((i&ostruct->mask) == ostruct->match) 
+                        {
 				sh_instruction_jump_table[i] = ostruct->opcode_handler;
-            }
-        }
+			}
+		}
 		ostruct++;
 	} while(ostruct->match != 0xfffd);
+	
 	sh_instruction_jump_table[0xfffd] = &SHCpu::dispatchSwirlyHook;
-
-	printf("Start execution\n");	
-
-	Word d;
-
-	addInterrupt(0x80000, 0);	// first SDL event
-	addInterrupt(0x1000, 1);	// first VBL event
-
-	for(;;)
-	{
-		if(debugger->prompt())
-		{
-		        //try {
-				d = mmu->fetchInstruction(PC);
-				executeInstruction(d);
-			//} catch (...) { // SHMmu::xMMUException
-			//	printf("Exception caught PC=%08x\n", SPC);
-			//}
+	
+#define FRAME 0x8000
+	
+	addInterrupt(FRAME, 0);     // first SDL event
+	addInterrupt(0x1000, 1);    // first VBL event
+	
+	currInstruction = mmu->fetchInstruction(PC);
+	
+	for(;;) 
+        {
+		if(debugger->prompt()) 
+                {
+			executeInstruction(currInstruction);
 			numIterations++;
 			checkInterrupt();
+			currInstruction = mmu->fetchInstruction(PC);
 		}
-	} // for
+	}
+
 }
 
-void SHCpu::exception(Dword type, Dword addr, Dword data, char *datadesc)
+void SHCpu::exception(Dword type, Dword addr, Dword data, char *datadesc) 
 {
+
 	exceptionsPending++;
-	if(datadesc == 0)
+
+	if(datadesc == 0) 
+        {
+		debugger->flamingDeath("Exception of type 0x%x (%s) at %08X",
+				       type, debugger->getExceptionName(type),
+				       addr, data);
+	} 
+	else 
 	{
-		debugger->flamingDeath("Received an exception of type 0x%x (%s) at %08X",
-			type,
-			debugger->getExceptionName(type),
-			addr,
-			data);
-	} else
-	{
-		debugger->flamingDeath("Received an exception of type 0x%x (%s) at %08X.  %s: %08x",
-			type,
-			debugger->getExceptionName(type),
-			addr,
-			datadesc,
-			data);
+		debugger->flamingDeath("Exception of type 0x%x (%s) at %08X. %s: %08x",
+				       type, debugger->getExceptionName(type),
+				       addr, datadesc, data);
 	}
 }
 
@@ -2817,35 +2818,38 @@ void SHCpu::addInterrupt(Dword at, Dword type)
 	intrpts[numIterations + at] = type;
 }
 
-inline void SHCpu::checkInterrupt()
+inline void SHCpu::checkInterrupt() 
 {
+	
 	intr_map::iterator ci = intrpts.begin();
-	while (ci->first <= numIterations) {
-		switch (ci->second) {
-			case 0: 		
-				overlord->handleEvents();
-				gpu->drawFrame();
-				addInterrupt(0x80000, 0);	// next SDL event
-				break;
-			case 1:
-				maple->asicAckA |= 0x20; 
-				addInterrupt(0x80000, 1);	// next VBL event
-				break;
-			case 2:
-				tmu->updateTCNT0();
-				break;
-			case 3:
-				tmu->updateTCNT1();
-				break;
-			default:
-				printf("Unknown Interrupt Type: %d\n", ci->second);
+	while (ci->first <= numIterations) 
+        {
+		switch (ci->second) 
+                {
+		case 0: 		
+			gpu->draw2DFrame();
+			maple->controller->checkInput();
+			addInterrupt(FRAME, 0);     // next SDL event
+			break;
+		case 1:
+			maple->asicAckA |= 0x20; 
+			addInterrupt(FRAME, 1);	// next VBL event
+			break;
+		case 2:
+			tmu->updateTCNT0();
+			break;
+		case 3:
+			tmu->updateTCNT1();
+			break;
+		default:
+			printf("Unknown Interrupt Type: %d\n", ci->second);
 		}
 		intrpts.erase(ci);
 		ci = intrpts.begin();	
 	}
-
-	if (maple->asic9a & maple->asicAckA)
-	{
+	
+	if (maple->asic9a & maple->asicAckA) 
+        {
 		intc->externalInt(9, 0x320);
 	}
 }
@@ -2854,13 +2858,14 @@ inline void SHCpu::checkInterrupt()
 int SHCpu::build_cl()
 {
 	Word d;
-
-	if (((Dword)recPtr - (Dword)recMem) >= (0x800000 - 0x8000)) {
+	
+	if (((Dword)recPtr - (Dword)recMem) >= (0x800000 - 0x8000)) 
+        {
 		printf("Recompile Memory exceeded!\n");
 		exit(-1);
 		// recReset(); -> clear recR*M and reset recPtr
 	}
-
+	
 	char *p;
 	Dword tpc = (PC & 0x1fffffff);
 	if ((tpc >= 0x0c000000) && (tpc < 0x0d000000)) {
@@ -2869,45 +2874,45 @@ int SHCpu::build_cl()
 		p = (char*)(recROM+((tpc-0x00000000)<<1));
 	}
 	else { printf("Access to illegal mem!\n"); }
-        
+	
 	*((Dword*)p) = (Dword)recPtr;
 	recPC = PC;
-
+	
 	// write function header
 	PUSHA32();
-
+	
 	unsigned long i = 0;
 	for (; i<1000; i++) {
 		d = mmu->fetchInstruction(recPC);
 		(this->*sh_recompile_jump_table[d])(d);
-
+		
 		if (branch) {
 			break;
 		}
 		recPC += 2;
 	}
-
+	
 	// write function end
 	ADD32ItoM((unsigned long)&numIterations, (unsigned long)i);
 	POPA32();
 	RET();
 	branch = 0;
-
+	
 	return 0;
 }
 
 void SHCpu::go_rec()
 {
-    opcode_handler_struct *ostruct;
+	opcode_handler_struct *ostruct;
 	int i;
-
+	
 	recMem = new char[0x800000]; // 8mb
 	recRAM = new char[0x1000000*2]; // 32mb (2*16mb -> sh-opcode word size)
 	recROM = new char[0x200000*2];
 	if (recRAM == NULL || recROM == NULL || recMem == NULL) {
 		printf("Error allocating memory"); exit(-1);
 	}
-
+	
 	recPtr = recMem;
 	
 	printf("Building Jumptable\n");	
@@ -2915,74 +2920,74 @@ void SHCpu::go_rec()
 	{
 		/* default to native */
 		sh_recompile_jump_table[i] = &SHCpu::recNativeOpcode;
-    }
-
+	}
+    
 	ostruct = sh_recompile_handler_table;
 	do
 	{
 		for(i = 0;i < 0x10000;i++)
 		{
 			if((i & ostruct->mask) == ostruct->match)
-            {
+			{
 				sh_recompile_jump_table[i] = ostruct->opcode_handler;
-            }
-        }
+			}
+		}
 		ostruct++;
 	} while(ostruct->match != 0xfffd);
 	sh_recompile_jump_table[0xfffd] = &SHCpu::recHook;
-
+    
 	for(i = 0; i < 0x10000; i++)
 	{
 		/* default to illegal */
 		sh_instruction_jump_table[i] = &SHCpu::unknownOpcode;
-    }
-
+	}
+    
 	ostruct = sh_opcode_handler_table;
 	do
 	{
 		for(i = 0;i < 0x10000;i++)
 		{
 			if((i & ostruct->mask) == ostruct->match)
-            {
+			{
 				sh_instruction_jump_table[i] = ostruct->opcode_handler;
-            }
-        }
+			}
+		}
 		ostruct++;
 	} while(ostruct->match != 0xfffd);
 	sh_instruction_jump_table[0xfffd] = &SHCpu::dispatchSwirlyHook;
-	
+    
 	printf("Start execution\n");	
-
+	
 	Word d;
-
+	
 	addInterrupt(0x80000, 0);	// first SDL event
 	addInterrupt(0x1000, 1);	// first VBL event
-
+	
 	for(;;)
 	{
 		if(debugger->prompt())
 		{
-
-		void (**recFunc)();
-		char *p;
-
-		Dword tpc = (PC & 0x1fffffff);
-		if ((tpc >= 0x0c000000) && (tpc < 0x0d000000)) {
-			p = (char*)(recRAM+((tpc-0x0c000000)<<1));
-		} else if ((tpc >= 0x00000000) && (tpc < 0x00200000)) {
-			p = (char*)(recROM+((tpc-0x00000000)<<1));
-		}
-		else { printf("Access to illegal mem: %08x\n", tpc); return; }
-
-		recFunc = (void (**)()) (Dword)p;
-        if (*recFunc) {
-                (*recFunc)();
-        } else {
-                build_cl();
-                (*recFunc)();
-        }
-
-		checkInterrupt();
+		    
+			void (**recFunc)();
+			char *p;
+		    
+			Dword tpc = (PC & 0x1fffffff);
+			if ((tpc >= 0x0c000000) && (tpc < 0x0d000000)) {
+				p = (char*)(recRAM+((tpc-0x0c000000)<<1));
+			} else if ((tpc >= 0x00000000) && (tpc < 0x00200000)) {
+				p = (char*)(recROM+((tpc-0x00000000)<<1));
+			}
+			else { printf("Access to illegal mem: %08x\n", tpc); return; }
+			
+			recFunc = (void (**)()) (Dword)p;
+			if (*recFunc) {
+				(*recFunc)();
+			} else {
+				build_cl();
+				(*recFunc)();
+			}
+			
+			checkInterrupt();
 		}
 	} // for
 }
@@ -3018,17 +3023,17 @@ void SHCpu::recHook(Word op)
 
 void SHCpu::recNOP(Word op)
 {
-//	PC+=2;
+	//	PC+=2;
 	ADD32ItoM((unsigned long)&PC, 0x2);
 }
 
 void SHCpu::recMOV(Word op)
 {
 	int m = getM(op), n = getN(op);
-//	R[n]=R[m];
+	//	R[n]=R[m];
 	MOV32MtoR(EBX, (unsigned long)&R);
 	MOV32R8toR(EAX, EBX, m*4);
 	MOV32RtoR8(EBX, n*4, EAX);
-//	PC+=2;
+	//	PC+=2;
 	ADD32ItoM((unsigned long)&PC, 0x2);
 }

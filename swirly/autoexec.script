@@ -2,10 +2,18 @@
 % Automatically executed!
 % ** Each line must be terminated with a newline **
 
-l ../fakebootrom/fbr.bin a0000000
-l ../images/IP.BIN 8c008000
-% l ../images/stars.srec % Dan Potter's stars demo
-% l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/320x240/320x240.srec
-% l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/640x480/640x480.srec
-l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/ta/ta.srec
+%%% set the path to where the subdir images/ is located 
+path /home/suike/swirly/main/images/
+
+%%% three file formats recognized: .srec .elf .bin (defaults to .bin)
+
+%%% boot image is always from a0000000 to a0200000
+l ../fakebootrom/fbr.srec 
+
+l IP.BIN 8c008000
+
+%l ta.srec
+%l videotest.srec
+%l mapletest.srec
+%l stars.srec 
 

@@ -1,9 +1,4 @@
-// Debugger.cpp: implementation of the Debugger class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #include "Debugger.h"
-#include "Overlord.h"
 #include "SHCpu.h"
 #include "SHMmu.h"
 #include <stdio.h>
@@ -12,12 +7,20 @@
 #include <string.h>
 #include "dcdis.h"
 
-Overlord::NumberName exceptionList[] =
+struct exceptions 
 {
-	{E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION, "E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION"},
+	int handle;
+	char *id;
+};
+
+struct exceptions exceptionList[] = 
+{
+	{E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION, 
+	 "E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION"},
 	{E_INSTRUCTION_ADDRESS_ERROR, "E_INSTRUCTION_ADDRESS_ERROR"},
 	{E_INSTRUCTION_TLB_MISS, "E_INSTRUCTION_TLB_MISS"},
-	{E_INSTRUCTION_TLB_PROTECTION_VIOLATION, "E_INSTRUCTION_TLB_PROTECTION_VIOLATION"},
+	{E_INSTRUCTION_TLB_PROTECTION_VIOLATION, 
+	 "E_INSTRUCTION_TLB_PROTECTION_VIOLATION"},
 	{E_GENERAL_ILLEGAL_INSTRUCTION, "E_GENERAL_ILLEGAL_INSTRUCTION"},
 	{E_SLOT_ILLEGAL_INSTRUCTION, "E_SLOT_ILLEGAL_INSTRUCTION"},
 	{E_GENERAL_FPU_DISABLE, "E_GENERAL_FPU_DISABLE"},
@@ -26,8 +29,10 @@ Overlord::NumberName exceptionList[] =
 	{E_DATA_ADDRESS_ERROR_WRITE, "E_DATA_ADDRESS_ERROR_WRITE"},
 	{E_DATA_TLB_MISS_READ, "E_DATA_TLB_MISS_READ"},
 	{E_DATA_TLB_MISS_WRITE, "E_DATA_TLB_MISS_WRITE"},
-	{E_DATA_TLB_PROTECTION_VIOLATION_READ, "E_DATA_TLB_PROTECTION_VIOLATION_READ"},
-	{E_DATA_TLB_PROTECTION_VIOLATION_WRITE, "E_DATA_TLB_PROTECTION_VIOLATION_WRITE"},
+	{E_DATA_TLB_PROTECTION_VIOLATION_READ, 
+	 "E_DATA_TLB_PROTECTION_VIOLATION_READ"},
+	{E_DATA_TLB_PROTECTION_VIOLATION_WRITE, 
+	 "E_DATA_TLB_PROTECTION_VIOLATION_WRITE"},
 	{E_FPU, "E_FPU"},
 	{E_INITAL_PAGE_WRITE, "E_INITAL_PAGE_WRITE"},
 	{-1, "[-1 is not an exception]"}
@@ -39,7 +44,7 @@ Debugger::Debugger(class SHCpu *shcpu) : showStatusMessages(true), cpu(shcpu), b
 	breakpoints = new Breakpoint[DBG_MAXBREAKPOINTS];
 	for(int i=0;i<DBG_MAXBREAKPOINTS;i++)
 		breakpoints[i].valid = false;
-	promptOn = true;
+	promptOn = false;
 	execBpSet = false;
 	memBpSet = false;
 	maxExecBp = maxMemBp = 0;
@@ -49,7 +54,7 @@ Debugger::~Debugger()
 {
 	if(branchTraceFile)
 		fclose(branchTraceFile);
-	delete breakpoints;
+	delete [] breakpoints;
 }
 
 // loads and runs a script of debugger commands
@@ -80,6 +85,7 @@ bool Debugger::runScript(char *fname)
 			dispatchCommand(tmp);
 	}
 
+	fclose(fp);
 	return true;
 }
 
@@ -123,12 +129,12 @@ void Debugger::reportBranch(char *tag, Dword src, Dword dest)
 	static Dword last_src = 0, last_dest = 0;
 	static int count = 0;
 
-	if(branchTraceFile)
-	{
+	if(branchTraceFile) 
+        {
 		if((last_src == src) && (last_dest == dest))
 			count++;
-		else
-		{
+		else 
+                {
 			if(count > 0)
 				fprintf(branchTraceFile, "\trepeated %d times\n", count);
 			else
@@ -175,7 +181,7 @@ void Debugger::dumpRegs()
 				fpscr & F_FPSCR_SZ ? "SZ" : "  ",
 				fpscr & F_FPSCR_PR ? "PR" : "  ",
 				fpscr & F_FPSCR_DN ? "DN" : "  ",
-				Overlord::bits(fpscr, 1, 0));
+				bits(fpscr, 1, 0));
 		}
 		if(i==10)
 			printf("FPUL: %.4f %08X", *((float*)&cpu->FPUL), cpu->FPUL);
@@ -184,13 +190,13 @@ void Debugger::dumpRegs()
 			//printf("MMUCR: %08X", CCNREG(MMUCR));
 			int mmucr = CCNREG(MMUCR);
 			printf("MMUCR: [LRUI=%02X URB=%02X URC=%02X %s %s %s %s]",
-				Overlord::bits(mmucr, 31, 26),
-				Overlord::bits(mmucr, 23, 18),
-				Overlord::bits(mmucr, 15, 10),
-				Overlord::bits(mmucr, 9, 9) ? "SQMD" : "    ",
-				Overlord::bits(mmucr, 8, 8) ? "SV" : "  ",
-				Overlord::bits(mmucr, 2, 2) ? "TI" : "  ",
-				Overlord::bits(mmucr, 0, 0) ? "AT" : "  ");
+				bits(mmucr, 31, 26),
+				bits(mmucr, 23, 18),
+				bits(mmucr, 15, 10),
+				bits(mmucr, 9, 9) ? "SQMD" : "    ",
+				bits(mmucr, 8, 8) ? "SV" : "  ",
+				bits(mmucr, 2, 2) ? "TI" : "  ",
+				bits(mmucr, 0, 0) ? "AT" : "  ");
 		}
 		if(i==14)
 		{
@@ -223,7 +229,6 @@ inline void Debugger::checkExecBp()
 }
 
 // Does the debugger prompt stuff.
-// Doing things this way we end up fetching the instruction twice, but oh well.
 bool Debugger::prompt()
 {
 	char userInput[512];
@@ -235,9 +240,9 @@ bool Debugger::prompt()
 	if(promptOn)
 	{
 		dumpRegs();
-		d = cpu->mmu->fetchInstruction(cpu->PC);
-		printf("%08x: %04x: %s -> ", cpu->PC, d, disasmInstr(d, cpu->PC));
-		cpu->overlord->getString(userInput, 511);
+		printf("%08x: %04x: %s -> ", cpu->PC, cpu->currInstruction, 
+		       disasmInstr(cpu->currInstruction, cpu->PC));
+		fgets(userInput, 511, stdin);
 		return dispatchCommand(userInput);
 	} else
 		return true;
@@ -255,6 +260,7 @@ bool Debugger::dispatchCommand(char *cmd)
 
 #define DO_CMD(a, b) if(strcmp(a, firstToken)==0) return b(cmd)
 
+	DO_CMD("path", cmdPath);
 	DO_CMD("d", cmdD);
 	DO_CMD("s", cmdS);
 	DO_CMD("l", cmdL);
@@ -345,13 +351,18 @@ bool Debugger::isWhitespace(char c)
 	}
 }
 
+bool Debugger::cmdPath(char *cmd) 
+{
+	getToken(cmd, 1, path);
+	printf("Path environment has been set to %s...\n", path);
+}
+
 // debugger command to dump memory
 bool Debugger::cmdD(char *cmd)
 {
 	char addx[128];
 	int addr, i, j, rowlen=16, numrows = 10;
 	char c;
-
 
 	getToken(cmd, 1, addx);
 	if(strlen(addx) == 0)
@@ -437,34 +448,48 @@ bool Debugger::cmdS(char *cmd)
 }
 
 // debugger command to load file to an arbitrary address
-bool Debugger::cmdL(char *cmd)
+bool Debugger::cmdL(char *cmd) 
 {
+
 	char fname[255], addr[255];
 	Dword theaddr;
 	getToken(cmd, 1, fname);
 	getToken(cmd, 2, addr);
-	if(strlen(fname) == 0)
-	{
+	
+	if(strlen(fname) == 0) 
+        {
 		printf("Usage: l <filename> [addr-in-hex]\n");
 		return false;
 	}
-	sscanf(addr, "%x", &theaddr);
-	if((strlen(fname) > 5) && (strcmp(fname+strlen(fname)-5, ".srec") == 0))
-	{
+	
+	char fullPath[255];
+	memset(fullPath, 0, 255);
+	strcpy(fullPath, path);
+	strcat(fullPath, fname);
+	
+	char *ext = strrchr(fname, '.');
+	if(ext==NULL) ext = ".bin";
+	
+	if(strcmp(ext, ".srec")==0) 
+        {
 		printf("Loading %s as SREC...\n", fname);
-		cpu->overlord->loadSrec(fname);
-	}
-	else
-	{
-		if(strlen(addr) == 0)
-		{
-			printf("Error: You need to specify an address.\n");
-			return false;
-		}
+		cpu->overlord->loadSrec(fullPath);
+	} 
+	else if(strcmp(ext, ".elf")==0) 
+        {
+		printf("Loading %s as ELF...\n", fname);
+		cpu->overlord->loadElf(fullPath);
+	} 
+	else 
+        {
+		sscanf(addr, "%x", &theaddr);
+		if(strlen(addr) == 0) theaddr = 0x8c010000; // default
+		
 		printf("Loading %s as flat binary to %08x...\n", fname, theaddr);
-		cpu->overlord->load(fname, theaddr);
+		cpu->overlord->load(fullPath, theaddr);
 	}
-	return false;
+	
+	return true;
 }
 
 // debugger command to set an execution breakpoint
@@ -498,7 +523,7 @@ bool Debugger::cmdBx(char *cmd)
 }
 
 // debugger command to exit the program
-bool Debugger::cmdQ(char *cmd)
+bool Debugger::cmdQ(char *cmd) 
 {
 	exit(0);
 	return false;
@@ -514,8 +539,8 @@ bool Debugger::cmdG(char *cmd)
 // Draw Frame - tells Gpu to refresh the screen
 bool Debugger::cmdDf(char *cmd)
 {
-	cpu->gpu->drawFrame();
-	printf("Screen refreshed with Gpu::drawFrame.\n");
+	cpu->gpu->draw2DFrame();
+	printf("2D screen refreshed with Gpu::draw2DFrame.\n");
 	return false;
 }
 
@@ -646,11 +671,20 @@ void Debugger::checkMemBp(Dword addr)
 bool Debugger::cmdR(char *cmd)
 {
 	char reg[64], value[64];
+
 	Dword val, *realaddr = 0;
 
 	getToken(cmd, 1, reg);
 	getToken(cmd, 2, value);
+
+	if(reg[0]=='\0' || value[0]=='\0')
+	    return false;
+
+	printf("got %s %s\n", reg, value);
+
 	sscanf(value, "%x", &val);
+
+	printf("value is now %x\n", val);
 
 #define DO_REG(a, b) if(strcmp(reg, a) == 0) realaddr = &(b)
 
@@ -688,9 +722,9 @@ bool Debugger::cmdR(char *cmd)
 // usually you'll use this to show the delay slot instruction
 bool Debugger::cmdUf(char *cmd)
 {
-	Word d = cpu->mmu->fetchInstruction(cpu->PC + 2);
-	printf("%08x: %04x: %s\n", cpu->PC, d, disasmInstr(d, cpu->PC));
-	return false;
+    Word d = cpu->mmu->fetchInstruction(cpu->PC + 2);
+    printf("%08x: %04x: %s\n", cpu->PC, d, disasmInstr(d, cpu->PC));
+    return false;
 }
 
 // executes until an rte or rts
@@ -700,12 +734,13 @@ bool Debugger::cmdF(char *cmd)
 
 	promptOn = false;
 
+	// XXX: this doesn't look right. what if an exception occurs? 
 	while(promptOn == false)
 	{
 		d = cpu->mmu->fetchInstruction(cpu->PC);
 		if((d == 0x002b) || (d == 0x000b))
 			promptOn = true;
-		else
+		else 
 			cpu->executeInstruction(d);
 	}
 
@@ -760,11 +795,11 @@ void Debugger::updateMaxBp(int type, int *max)
 // retrieves a pointer to the name of an exception
 char* Debugger::getExceptionName(int exception)
 {
-	Overlord::NumberName *ptr = exceptionList;
-	while(ptr->number != -1)
+	struct exceptions *ptr = exceptionList;
+	while(ptr->handle != -1)
 	{
-		if(ptr->number == exception)
-			return ptr->name;
+		if(ptr->handle == exception)
+			return ptr->id;
 		ptr++;
 	}
 	return "[Unknown exception]";

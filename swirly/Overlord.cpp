@@ -1,7 +1,3 @@
-// Overlord.cpp: implementation of the Overlord class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #ifdef _WIN32
 #include <conio.h>
 #endif
@@ -11,47 +7,28 @@
 #include <string.h>
 #include <unistd.h>
 
-Overlord::Overlord(SHCpu *cpu)
+Overlord::Overlord(SHCpu *cpu) 
 {
 	this->cpu = cpu;
-	cpu->overlord = this;
 }
 
-Overlord::~Overlord()
-{
+Overlord::~Overlord() {}
 
-}
-
-void Overlord::handleEvents()
-{
-	int button;
-	SDL_Event e;
-	SDL_PollEvent(&e);
-	switch(e.type)
-	{
-	case SDL_KEYDOWN:
-	case SDL_KEYUP:
-		switch(e.key.keysym.sym)
-		{
-		case SDLK_a: button = BUTTON_A; break;
-		case SDLK_LEFT: button = BUTTON_LEFT; break;
-		case SDLK_RIGHT: button = BUTTON_RIGHT; break;
-		case SDLK_UP: button = BUTTON_UP; break;
-		case SDLK_DOWN: button = BUTTON_DOWN; break;
-		case SDLK_RETURN: button = BUTTON_START; break;
-		default: button = 0; break;
-		}
-		cpu->maple->buttonState[button] = (e.type == SDL_KEYDOWN);
-	}
-}
-
-// loads and descrambles a file which has been scrambled in the 1ST_READ.BIN style
+// loads and descrambles a file which has been scrambled in 1ST_READ.BIN style
 void Overlord::loadAndDescramble(FILE *fp, int start, int len, SHCpu *cpu, Dword addr)
 {
+	
+	Byte *buf = new Byte[len];
+	
+#if 0
+	Dword sz = 0;
+	load_file(fp, buf, sz);
+	copyFromHost(cpu, addr, buf, len);
+	unlink(tempFilename);
+#else
 	char *tempFilename = "swirly-1stread.tmp";
 	char *tempFilename2 = "swirly-1stread-2.tmp";
 	
-	unsigned char *buf = new unsigned char[len];
 	// copy the 1ST_READ.BIN to a temp file
 	fseek(fp, start, SEEK_SET);
 	fread(buf, 1, len, fp);
@@ -62,11 +39,11 @@ void Overlord::loadAndDescramble(FILE *fp, int start, int len, SHCpu *cpu, Dword
 	tmpfp = fopen(tempFilename2, "rb");
 	fread(buf, 1, len, tmpfp);
 	fclose(tmpfp);
-	copyFromHost(cpu, addr, (void*) buf, len);
-
+	copyFromHost(cpu, addr, buf, len);
 	unlink(tempFilename);
 	unlink(tempFilename2);
-	delete buf;
+#endif
+	delete [] buf;
 }
 
 // loads stuff from an open file to SH4 memory
@@ -76,11 +53,95 @@ void Overlord::load(FILE *fp, int start, int len, SHCpu *cpu, Dword addr)
 	char c;
 	fseek(fp, start, SEEK_SET);
 	while(i < len)
-	{
-		fread((void*)&c, 1, 1, fp);
-		cpu->mmu->writeByte(addr+i, c);
-		i++;
+		{
+			fread((void*)&c, 1, 1, fp);
+			cpu->mmu->writeByte(addr+i, c);
+			i++;
+		}
+}
+
+struct elfSectionHeader {
+	Dword unused0; 
+	Dword type;
+	Dword flags; 
+	Dword addr;    
+	Dword offset;
+	Dword size;    
+	Dword unused1;
+	Dword unused2;
+	Dword unused3;   
+	Dword unused4;
+};
+
+bool Overlord::loadElf(char *fname) 
+{
+	
+	FILE *fp;
+	Dword fsize;
+	
+	fp = fopen(fname, "rb");
+	if(fp == NULL) 
+        {
+		printf("Can't open %s!\n", fname);
+		return false;
 	}
+	
+	// read in the ELF file header -- we just need to check a few words
+	Word header[26];
+	fread(header, 2, 26, fp);
+	
+	// verify that we indeed do have a correct ELF file on our hands
+	if((header[0] != 0x457f) || (header[1] != 0x464c) || 
+	   (header[2] != 0x0101) || ((header[9]&0xFF) != 0x2a)) 
+        {
+		printf("Error: file does not appear to be an ELF file.\n", fname);
+		return false;
+	}
+	
+	// get section header offset
+	Dword *headerD = (Dword *)header;
+	fseek(fp, headerD[8], SEEK_SET);
+	
+	// read in all the section headers
+	Word shnum = header[24];
+	Byte *secData = new Byte[shnum*sizeof(struct elfSectionHeader)];
+	fread(secData, 1, shnum*sizeof(struct elfSectionHeader), fp);
+	struct elfSectionHeader *secs = (struct elfSectionHeader *) secData;
+	
+	// load elf sections to their respective places in sh4 memory
+	for(int i=0; i<shnum; i++) 
+        {
+		if(secs[i].flags&2) 
+                { 
+			
+			Byte *buf = new Byte[secs[i].size];
+			
+			if(secs[i].type==8) 
+                        { 
+				memset(buf, 0, secs[i].size); 
+			} 
+			else 
+			{
+				fseek(fp, secs[i].offset, SEEK_SET);
+				fread(buf, 1, secs[i].size, fp);
+			}
+			copyFromHost(cpu, secs[i].addr, buf, secs[i].size);
+			
+			delete [] buf;
+		}
+		
+		// check for relocation tables
+		if(secs[i].type == 4) 
+		{
+			printf("Crap. Relocation table(s) found. Not supported yet.\n");
+			return false;
+		}
+	}
+	
+	delete [] secData;
+	fclose(fp);
+	
+	return true;
 }
 
 // loads a raw image at the desired virtual address
@@ -88,20 +149,20 @@ void Overlord::load(char *fname, Dword addr)
 {
 	FILE *fp;
 	long fsize;
-
+	
 	fp = fopen(fname, "rb");
 	if(fp == NULL)
-	{
-		printf("Can't open %s!\n", fname);
-		return;
-	}
-
+		{
+			printf("Can't open %s!\n", fname);
+			return;
+		}
+	
 	fseek(fp, 0, SEEK_END);
 	fsize = ftell(fp); // figure out how big the file is
 	fseek(fp, 0, SEEK_SET);
-
+	
 	load(fp, 0, fsize, cpu, addr);
-
+	
 	fclose(fp);
 }
 
@@ -117,30 +178,30 @@ void Overlord::loadIso(char *fname, Dword addr)
 	int numblocks;
 	char buf[2048];
 	const int blockSize = 2048;
-
+	
 	fp = fopen(fname, "rb");
 	if(fp == NULL)
-	{
-		printf("can't open %s! ", fname);
-		return;
-	}
-
+		{
+			printf("can't open %s! ", fname);
+			return;
+		}
+	
 	fseek(fp, 0, SEEK_END);
 	fsize = ftell(fp); // figure out how big the file is
 	fseek(fp, 0, SEEK_SET);
-
+	
 	numblocks = fsize / (2048 + 8);
 	
 	for(int i=0; i<numblocks; i++)
-	{
-		fread(buf, 1, 8, fp); // who cares about those 8 junk bytes?
-		fread(buf, 1, blockSize, fp); // we'll keep this though
-
-		// horribly inefficient--oh well
-		for(int j=0; j<blockSize; j++)
-			cpu->mmu->writeByte(addr+(blockSize*i)+j, buf[j]);
-	}
-
+		{
+			fread(buf, 1, 8, fp); // who cares about those 8 junk bytes?
+			fread(buf, 1, blockSize, fp); // we'll keep this though
+			
+			// horribly inefficient--oh well
+			for(int j=0; j<blockSize; j++)
+				cpu->mmu->writeByte(addr+(blockSize*i)+j, buf[j]);
+		}
+	
 	fclose(fp);
 }
 
@@ -151,201 +212,150 @@ void Overlord::loadToHost(char *fname, Dword addr)
 	long fsize;
 	char buf[2048];
 	const int blockSize = 2048;
-
+	
 	fp = fopen(fname, "rb");
 	if(fp == NULL)
-	{
-		printf("can't open %s! ", fname);
-		return;
-	}
+		{
+			printf("can't open %s! ", fname);
+			return;
+		}
 	fseek(fp, 0, SEEK_END);
 	fsize = ftell(fp); // figure out how big the file is
 	fseek(fp, 0, SEEK_SET);
-
+	
 	long i=0;
 	while(i < (fsize / blockSize))
-	{
-		fread((void*)buf, 1, blockSize, fp);
-		memcpy((void*)(addr+blockSize*i), (void*)buf, blockSize);
-		i++;
-	}
-
+		{
+			fread((void*)buf, 1, blockSize, fp);
+			memcpy((void*)(addr+blockSize*i), (void*)buf, blockSize);
+			i++;
+		}
+	
 	fclose(fp);
 }
 
-// someday we'll use this for something
-char* Overlord::getNameForNumber(int n, NumberName list[])
-{
-	int i = 0;
-	while(list[i].number != 0)
-	{
-		if(list[i].number == n)
-			return list[i].name;
-	}
-	return "[Unknown]";
-}
-
-// This function gets a string while pseudo-concurrently processing SDL events.
-// Sadly, it uses a spinlock to check for SDL events, which means it hogs the
-// CPU.  I wish I knew of a better way to do this while still maintaining cross-
-// platform compatibility.
-void Overlord::getString(char *buf, int buflen)
-{
-	SDL_Event e;
-	fflush(stdout);
-	for(;;)
-	{
-		if(kbhit() != 0)
-		{
-			fgets(buf, buflen, stdin);
-			return;
-			// Not using the following code because Win32 likes to buffer
-			// input streams and take an entire string even on a getchar/fgetc
-			// which defeats the purpose of using fgetc/getchar in the first
-			// place.  Even putting a setvbuf() call at program startup
-			// to diable buffering on stdin won't fix it.
-		/*	int c = fgetc(stdin); 
-			switch(c)
-			{
-			case '\r':
-				break;
-			case '\n':
-				buf[i] = '\0';
-				return;
-			default:
-				if(i<(buflen-1))
-					buf[i++] = c;
-			}
-		*/
-		}
-		else if(SDL_PollEvent(&e) != 0)
-		{
-			switch(e.type)
-			{
-			case SDL_ACTIVEEVENT:
-				cpu->gpu->drawFrame();
-				break;
-			}
-		}
- 	}
-}
-
-// OS-specific routine - returns nonzero if a key has been hit but the char
-// hasn't been read.
-int Overlord::kbhit()
-{
-#ifndef _WIN32
-	return 1;
-#else
-	return _kbhit();
-#endif
-}
-
-Dword Overlord::switchEndian(Dword d)
-{
-	return
-	((d & 0xff) << 24) |
-	((d & 0xff00) << 8) |
-	((d & 0xff0000) >> 8) |
-	(d >> 24);
-}
-
-// extracts bits out of a dword
-Dword Overlord::bits(Dword val, int hi, int lo)
-{
-	Dword ans = val << (31 - hi);
-	ans = ans >> (31 - hi + lo);
-	return ans;
-}
-
 // like memcpy, except it copies from host address space to SH address space
-void Overlord::copyFromHost(SHCpu *cpu, Dword dest, void *src, Dword len)
+void Overlord::copyFromHost(SHCpu *cpu, Dword dest, void *src, Dword len) 
 {
-	Byte *s = (Byte *) src;
-	for(Dword i=0; i<len; i++)
-		cpu->mmu->writeByte(dest+i, s[i]);
+	
+	Dword *sd = (Dword *)src;
+	for(Dword i=0; i<(len>>2); i++) 
+		cpu->mmu->writeDword(dest+(i<<2), sd[i]);
+	
+	// write last few bytes if any
+	if(len&3) 
+        {
+		Byte *sb = (Byte *)src;
+		for(int i=1; i<=(len&3); i++) 
+			cpu->mmu->writeByte(dest+len-i, sb[len-i]);
+	}
 }
 
 // loads an SREC format file
-// FIXME: this sucks
-bool Overlord::loadSrec(char *fname)
+bool Overlord::loadSrec(char *fname) 
 {
+	
 	FILE *fp = fopen(fname, "rb");
-	if(fp == NULL)
-	{
+	if(fp == NULL) 
+        {
 		printf("Couldn't open %s!\n", fname);
 		return false;
 	}
-	char type[4], count[4];
+	
+	Word type;
+	char count[4];
 	int numBytes;
-
-	while(!feof(fp))
-	{
-		type[0] = 0;
-		while(type[0] != 'S')
-			fread(&type, 1, 2, fp);
-
-
+	
+	while(!feof(fp)) 
+        {
+		type = 0;
+		while((type&0xFF) != 'S')
+			fread(&type, 2, 1, fp);
+		
 		fread(&count, 1, 2, fp);
-		type[2] = count[2] = 0; // null terminate
-		//convertSrecBytes(count, (char*)&numBytes, 1);
+		count[2] = 0; // null terminate
 		sscanf(count, "%02x", &numBytes);
-
-		switch(type[1])
-		{
-		case '0':
-			{
-				//printf("..%d///", numBytes);
-				numBytes -= 3;
-				char *desc = new char[numBytes*2];
-				fread(desc, 1, 4, fp); // throw out 4 bytes of address
-				fread(desc, 1, numBytes*2, fp);
-				convertSrecBytes(desc, desc, numBytes);
-				// printf("SREC: %s\n", desc);
-				delete desc;
-				break;
-			}
-
+		
+		type >>= 8;
+		switch(type) 
+                {
+		case '0': 
+			numBytes -= 3;
+			fseek(fp, numBytes*2+4, SEEK_CUR); 
+			break;
 		case '3': // 4-byte address
 			{
 				numBytes -= 4;
+				
 				char addrStr[8];
-				char *buf = new char[numBytes*2];
 				Dword addr;
 				fread(addrStr, 1, 8, fp);
 				sscanf(addrStr, "%8x", &addr);
+				
+				char *buf = new char[numBytes*2];
 				fread(buf, 1, numBytes*2, fp);
-				// we'll throw out the checksum
-				numBytes--;
+				
+				numBytes--; // throw out checksum
 				convertSrecBytes(buf, buf, numBytes);
 				copyFromHost(cpu, addr, buf, numBytes);
-
+				
+				delete [] buf;
 				break;
 			}
-		case '7': // execution start address
-			return false; // break; // XXX: we don't care
+		case '7': // execution start address (not needed)
+#if 0 
+			char addrStr[8];
+			Dword addr;
+			fread(addrStr, 1, 8, fp);
+			sscanf(addrStr, "%8x", &addr);
+			printf("SREC load address is %08x\n", addr);
+#endif 
+			
+			fclose(fp);
+			return false; 
 		default:
-			printf("Overlord::loadSrec: Unknown SREC block type S%c\n", type[1]);
+			printf("Overlord::loadSrec: Unknown SREC block type S%c\n", type);
+			fclose(fp);
 			return false;
-
 		}
 	}
+	
+	fclose(fp);
 	return true;
 }
 
-// converts SREC-type byte strings into real bytes
-// okay to specify same address as src and dest
-void Overlord::convertSrecBytes(char *src, char *dest, int numBytes)
+// converts SREC-type byte strings into real bytes (src == dst allowed)
+void Overlord::convertSrecBytes(char *src, char *dest, int numBytes) 
 {
+	
+#if 1
+	// to avoid errors shown in valgrind (yea that's the only reason why!!)
+	// incidentally, this code is faster than using sscanf...
+	char x, y;
+	for(int i=0; i<numBytes; i++) 
+        {
+		
+		x = *(src+(i*2))   - '0';
+		y = *(src+(i*2)+1) - '0';
+		
+		if(x>9) x-=7; 
+		if(y>9) y-=7;
+		
+		dest[i] = (x<<4) | y;
+	}
+#else
 	Byte *tmp = new Byte[numBytes];
-	int d, i;
-	for(i=0; i<numBytes; i++)
-	{
-//		printf("%2s", src+(i*2));
-		sscanf(src+(i*2), "%2x", &d);
+	
+	int d;
+	for(int i=0; i<numBytes; i++) 
+        {
+		sscanf(src+(i*2), "%02x", &d);
 		tmp[i] = (Byte)(d&0xff);
 	}
+	
 	memcpy(dest, tmp, numBytes);
-	dest[i] = 0;
-	delete tmp;
+	delete [] tmp;
+#endif
+	
+	dest[numBytes] = 0;
 }

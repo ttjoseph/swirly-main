@@ -2,80 +2,78 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
-#include "SHCpu.h"
-#include "Overlord.h"
 
 #include <SDL/SDL.h>
 
+#include "SHCpu.h"
+
 SHCpu *cpu;
+SDL_Surface *icon;
 
-void onDeath(int signal)
-{
-	cpu->debugger->flamingDeath("Oh no, a segfault.");
+void onDeath(int signal) {
+    cpu->debugger->flamingDeath("Oh no, a segfault.");
 }
 
-void sigintHandler(int signal)
-{
-	cpu->debugger->promptOn = true;
+void sigintHandler(int signal) {
+    cpu->debugger->promptOn = true;
 }
 
-int main(int argc, char *argv[])
-{
-	printf(VERSION_STRING " - compiled on " __DATE__ " at " __TIME__ "\n");
-	printf("Distributed under the GNU General Public License, version 2\n\n");
+void exitHandler() {
+    delete cpu;
+    SDL_FreeSurface(icon);
+    SDL_Quit();
+}
 
-	// SIGINT isn't supposed to work on Win32 so we won't even try
+int main(int argc, char *argv[]) {
+
+    printf(VERSION_STRING " - compiled on " __DATE__ " at " __TIME__ "\n");
+    printf("Distributed under the GNU General Public License, version 2\n\n");
+
+    // SIGINT isn't supposed to work on Win32 so we won't even try
 #ifndef _WIN32
-	signal(SIGINT, sigintHandler); // so we can hit Ctrl+C in *nix to exit
+    signal(SIGINT, sigintHandler); // so we can hit Ctrl+C in *nix to exit
 #endif
-	signal(SIGSEGV, onDeath);
-	
-	// SDL init stuff
-	SDL_Init(SDL_INIT_VIDEO);
-	atexit(SDL_Quit);
-	SDL_EventState(SDL_MOUSEMOTION, SDL_IGNORE);
+    signal(SIGSEGV, onDeath);
+    
+    // SDL init stuff
+    SDL_Init(SDL_INIT_VIDEO);
+    atexit(exitHandler);
+    
+    icon = SDL_LoadBMP("../misc/swirly-icon.ico");
+    if(icon != NULL)
+	SDL_WM_SetIcon(icon, NULL);
 
-	SDL_Surface *icon = SDL_LoadBMP("../misc/swirly-icon.ico");
-	if(icon != NULL)
-		SDL_WM_SetIcon(icon, NULL);
+    // for now: argc-1 indicates controller, otherwise keyboard/mouse
+    cpu = new SHCpu(argc-1); 
+    
+    // *** EXAMPLES ***
 
-	cpu = new SHCpu();
-	Overlord *o = new Overlord(cpu);
+    // to load the boot ROM:
+    // cpu->overlord->load("../fakebootrom/fbr.bin", 0xA0000000);
 
-#if 0
-	// load the boot ROM
-	printf("Loading boot ROM...");
-	o->load("../fakebootrom/fbr.bin", 0xA0000000);
-	printf("done.\n");
+    // to load flash memory (nonessential):
+    // cpu->overlord->loadToHost("../images/flash", (Dword) cpu->mmu->flash);
 
-	// load the flash memory
-	//printf("Loading flash (nonessential image)...");
-	//o->loadToHost("../images/flash", (Dword) cpu->mmu->flash);
-	//printf("done.\n");
+    // to load a flat binary:
+    // cpu->overlord->load("../images/dreampac_unscrambled.bin",0x8c010000);
 
-	// load the images we're going to run
-	printf("Loading images...");
-	o->load("../images/IP.BIN", 0x8c008000);
-	//o->load("../images/dreampac_unscrambled.bin", 0x8c010000);
-	//o->loadSrec("../images/stars.srec");
-	//o->loadSrec("../images/mapletest.srec");
-	//o->loadSrec("../images/videotest.srec");
-	//cpu->gdrom->startSector(0);
-	//cpu->gdrom->load("something.iso");
-	printf("done.\n");
-#endif
-	printf("Executing autoexec.script...\n");
-	if(cpu->debugger->runScript("autoexec.script") == false)
-		printf("Couldn't find autoexec.script!\n");
+    // to load a SREC file:
+    // cpu->overlord->loadSrec("../images/stars.srec");
 
-	cpu->gdrom->load("../images/linux.iso");
-	printf("Fasten your seatbelts.\n\n");
-	// PC should be 0xA0000000 at this point
-	cpu->go_rec();
+    // to load an ISO: 
+    // cpu->gdrom->startSector(0);
+    // cpu->gdrom->load("something.iso");
 
-	SDL_FreeSurface(icon); // as if we ever reach here anyway
-
-	return 0;
+    printf("Executing autoexec.script...\n");
+    if(cpu->debugger->runScript("autoexec.script") == false)
+	printf("Couldn't find autoexec.script!\n");
+    
+    printf("Fasten your seatbelts.\n\n");
+    
+    //cpu->go_rec();
+    cpu->go();
+    
+    return 0;
 }
 
 /*

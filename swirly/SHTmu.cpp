@@ -108,12 +108,12 @@ Dword SHTmu::hook(int event, Dword addr, Dword data)
 
 	if ((event == MMU_WRITE_BYTE) && ((addr & 0xff)==0x04)) {
 		if (data & 0x1)  {
-			printf("Timer 0 started: %08x\n", TCNT0);
+		    printf("Timer 0 started: %08x\n", TCNT0);
 			tcnt0StartTime = cpu->numIterations;
 			cpu->addInterrupt(TCNT0 << 2, 2);
 		}
 		if (data & 0x2)  {
-			printf("Timer 1 started\n");
+		    printf("Timer 1 started\n");
 			tcnt1StartTime = cpu->numIterations;
 			cpu->addInterrupt(TCNT1 << 4, 3);
 		}

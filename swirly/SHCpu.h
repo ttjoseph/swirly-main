@@ -14,6 +14,7 @@
 #include "SHDmac.h"
 #include "SHIntc.h"
 #include "Gpu.h"
+#include "Modem.h"
 #include "Spu.h"
 #include "Gdrom.h"
 #include "Maple.h"
@@ -77,8 +78,8 @@
 #define E_DATA_TLB_MISS_WRITE                   0x060
 #define E_DATA_TLB_PROTECTION_VIOLATION_READ    0x0a0
 #define E_DATA_TLB_PROTECTION_VIOLATION_WRITE   0x0c0
-#define E_FPU									0x120
-#define E_INITAL_PAGE_WRITE						0x080
+#define E_FPU					0x120
+#define E_INITAL_PAGE_WRITE			0x080
 
 // functions in shfpu.s
 extern "C"
@@ -110,9 +111,11 @@ public:
 	void executeInstruction(Word d);
 	void reset();
 	void delaySlot();
-	SHCpu();
+	SHCpu(Dword setting);
 	virtual ~SHCpu();
 	void setSR(Dword d);
+
+	Word currInstruction;
 
 	Dword *R, *RBANK, RBANK0[16], RBANK1[16], SR, GBR, VBR, MACH, MACL, PR, PC,
 	SPC, DBR, SSR, SGR, *FR_Dwords, *XF_Dwords;
@@ -124,7 +127,7 @@ public:
 
 	Byte ccnRegs[1024]; // XXX: is this the best way to do this?
 	int exceptionsPending;
-    Dword numIterations;
+	Dword numIterations;
 
 	class SHMmu *mmu;
 	class SHTmu *tmu;
@@ -137,6 +140,7 @@ public:
 	class Gdrom *gdrom;
 	class Spu *spu;
 	class Maple *maple;
+	class Modem *modem;
 
 	class Overlord *overlord;
 
@@ -171,7 +175,7 @@ public:
 	void recBranch(Word op);
 	void recNOP(Word op);
 	void recMOV(Word op);
-		
+
 public:	// Needs to be public
 	void dispatchSwirlyHook(Word op);
 	void unknownOpcode(Word op);

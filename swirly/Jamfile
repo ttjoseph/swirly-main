@@ -5,19 +5,21 @@ C++FLAGS = -I/usr/X11R6/include ;
 CC = gcc ;
 OPTIM = -O3 -fomit-frame-pointer ;
 # OPTIM = -ggdb -O0 ;
-LINK = g++ ;
+LINK = g++ -L/usr/X11R6/lib/ ;
 AS = nasm ;
 ASFLAGS = -f elf ;
 Main swirly :
 	Debugger.cpp
 	Gpu.cpp    
-	Overlord.cpp  
+	Overlord.cpp
+	Controller.cpp  
 	SHCpu.cpp   
 	SHIntc.cpp  
 	SHSci.cpp  
 	Spu.cpp
 	Gdrom.cpp
 	Maple.cpp  
+	Modem.cpp
 	SHBsc.cpp     
 	SHDmac.cpp
 	SHMmu.cpp   
@@ -33,5 +35,5 @@ LINKLIBS on swirly =
 	-lpthread
 	-lSDL
 	-lGL
-	-lGLU
 	;
+	

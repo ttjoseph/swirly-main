@@ -1,11 +1,6 @@
-// Gdrom.h: interface for the Gdrom class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #ifndef _GDROM_H_
 #define _GDROM_H_
 
-#include <stdio.h>
 #include "swirly.h"
 #include "SHCpu.h"
 

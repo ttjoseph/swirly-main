@@ -5,18 +5,8 @@
 #include "SHCpu.h"
 
 #include <SDL/SDL.h>
+#include <GL/gl.h>
 
-/* colors */
-#define GPU_RGB555       0
-#define GPU_RGB565       1
-#define GPU_RGB888       3
-/*
-  0: ARGB1555 (2 bytes/pixel)
-  1: RGB565 (2 bytes/pixel)
-  2: RGB888 (3 bytes/pixel)
-  3: ARGB8888 (4 bytes/pixel)
-*/
-/* 49 4b 4a 4c 4f 50 59 51 1a 1b */
 
 /* 0xa05f8000 registers */
 #define GPU_REG_ID            0x00
@@ -49,28 +39,23 @@
 
 #define PVR_TA_VERT_BUF_POS   0x4e
 
-/* magic values */
-
-
-/* 30 b0 b4 b7 68 6c d0 d4 dc d8 e0 60 64 48 4c 50 54 5c c8 74 7c 80 78 84 88 8c bc c0 e4 f4 */
-
+#define PVR_OPB_CFG           0x50 // configuration for type of polys
 
 #define GPU_MAXBACKBUFFERS 8
 #define GPU_BACKBUFFERUNUSED 0xffffffff
 
-class Gpu {
+class Gpu 
+{
 
-public:
-	void recvStoreQueue(Dword *sq);
+ public:
 	void handleTaWrite(Dword addr, Dword data);
-	void updateFps();
-	void drawFrame();
+	void draw2DFrame();
 	Dword hook(int eventType, Dword addr, Dword data);
 	Gpu(SHCpu *shcpu);
 	virtual ~Gpu();
-
+	
 	SHCpu *cpu;
-
+	
  private:
 	bool sane();
 	bool taEnabled();
@@ -81,21 +66,30 @@ public:
 	int pitch();
 	Dword baseAddr();
 	void masks(Dword *rm, Dword *gm, Dword *bm, Dword *am);
-    void textureMap(Dword address, Dword data);    
-    void genTwiddledTexture(Word *texture, Dword address, int w, int h);
-	int  actListType;
-
-    Dword regs[0x80];       // 128 powervr regs
-    Float fog_table[0x100]; // 128 indices, 128 floating point entries for fog
-    Dword opl_table[0x280]; 
-    /*
-      a05f8000 - a05f81ff: regs      0x200
-      a05f8200 - a05f85ff: fog_table 0x400
-      a05f8600 - a05f8fff: opl_table 0xa00
-    */
+	
+	void setOptions(Dword data0, Dword data1, Dword data2);
+	void textureMap(Dword address, Dword data1, Dword data2);    
+	void rotateTextureData(Word *texture, int size, Byte shift);
+	void twiddleTexture(Word *texture, Dword address, int w, int h);
+	void decompressVQ(Word *texture, Dword address, int w, int h);
+	void updateFPS();
+	
+	int fpsCounter;
+	
+	Dword regs[0x80];       // 128 powervr regs
+	Float fog_table[0x100]; // 128 indices, 128 floating point entries for fog
+	Dword opl_table[0x280]; 
+	/*
+	  a05f8000 - a05f81ff: regs      0x200
+	  a05f8200 - a05f85ff: fog_table 0x400
+	  a05f8600 - a05f8fff: opl_table 0xa00
+	*/
 	SDL_Surface *screen, *currBackBuffer, *backBuffers[GPU_MAXBACKBUFFERS];
-	Dword backBufferDCAddrs[GPU_MAXBACKBUFFERS], recvBuf[32];
+	Dword backBufferDCAddrs[GPU_MAXBACKBUFFERS], recvBuf[16];
 	int dwordsReceived, dwordsNeeded;
+	
+	int punchThru, transMod, transPoly, opaqMod, opaqPoly, lastType;
+	Dword lastOPBConfig; 
 };
 
 #endif

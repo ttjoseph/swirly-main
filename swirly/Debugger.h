@@ -1,7 +1,3 @@
-// Debugger.h: interface for the Debugger class.
-//
-//////////////////////////////////////////////////////////////////////
-
 #ifndef _DEBUGGER_H_
 #define _DEBUGGER_H_
 
@@ -24,8 +20,8 @@ public:
 	Debugger(class SHCpu *cpu);
 	virtual ~Debugger();
 	bool dispatchCommand(char *cmd);
-  char* getExceptionName(int exception);
-  char* disasmInstr(Word d, Dword pc);
+	char* getExceptionName(int exception);
+	char* disasmInstr(Word d, Dword pc);
 	void reportBranch(char *tag, Dword src, Dword dest);
 	void print(char *fmt, ...);
 	bool runScript(char *fname);
@@ -44,19 +40,20 @@ private:
 	{
 		Dword addr;
 		int type;
-
 		bool valid;
 	};
 
 	class SHCpu *cpu;
 	Breakpoint *breakpoints;
 	FILE *branchTraceFile;
+	char path[255];
 
 	bool isWhitespace(char c);
 	int scanTillWhitespace(char *s);
 	void getToken(char *s, int tokennum, char *putwhere);
 	int scanTillBlackspace(char *s);
 
+	bool cmdPath(char *cmd);
 	bool cmdTrb(char *cmd);
 	bool cmdU(char *cmd);
 	bool cmdR(char *cmd);
@@ -71,7 +68,7 @@ private:
 	bool cmdQ(char *cmd);
 	bool cmdBx(char *cmd);
 	bool cmdD(char *cmd);
-  bool cmdUf(char *cmd);
+	bool cmdUf(char *cmd);
 	bool cmdStat(char *cmd);
 	bool cmdF(char *cmd);
 	bool cmdL(char *cmd);
@@ -80,3 +77,5 @@ private:
 };
 
 #endif
+
+

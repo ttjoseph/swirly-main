@@ -1,21 +1,9 @@
 #ifndef _MAPLE_H_
 #define _MAPLE_H_
-// Maple bus header file
 
 #include "swirly.h"
 #include "SHCpu.h"
-
-// function codes
-#define MAPLE_CONTROLLER	0x001
-#define MAPLE_MEMCARD		0x002
-#define MAPLE_LCD			0x004
-#define MAPLE_CLOCK			0x008
-#define MAPLE_MICROPHONE	0x010
-#define MAPLE_ARGUN			0x020 // I wonder what an AR gun is
-#define MAPLE_KEYBOARD		0x040
-#define MAPLE_LIGHTGUN		0x080
-#define MAPLE_PURUPURU		0x100
-#define MAPLE_MOUSE			0x200
+#include "Controller.h"
 
 // commands
 #define MAPLE_REQ_DEVICE_INFO 1
@@ -37,55 +25,34 @@
 #define MAPLE_SEND_CMD_AGAIN_ERR 0xfc
 #define MAPLE_FILE_ERR 0xfb
 
-#define BUTTON_BASE 0
-#define BUTTON_LEFT (BUTTON_BASE+1)
-#define BUTTON_RIGHT (BUTTON_BASE+2)
-#define BUTTON_UP (BUTTON_BASE+3)
-#define BUTTON_DOWN (BUTTON_BASE+4)
-#define BUTTON_START (BUTTON_BASE+5)
-#define BUTTON_A (BUTTON_BASE+6)
-
-class Maple
+class Maple 
 {
-public:
-	// This struct copied almost verbatim from http://mc.pp.se/dc/maplebus.html
-	// Thank you Marcus Comstedt!
-	struct DeviceInfo
-	{
-		Dword suppFuncs; // func codes supported - big endian
-		Dword funcData[3]; // info about func codes - big endian
-		Byte region; // peripheral's region code
-		Byte connectorDirection; // ?? that's odd
-		char productName[30];
-		char productLicense[60];
-		Word standbyPower; // standby power consumption - little endian
-		Word maxPower; // maximum power consumption - little endian
-	};
 
-	struct FrameHeader
+ public:
+	
+	struct FrameHeader 
 	{
 		Byte command;
 		Byte recipient;
 		Byte sender;
 		Byte numWordsFollowing;
 	};
-
-	Maple(class SHCpu *cpu);
+    
+	Maple(class SHCpu *cpu, Dword setting);
 	virtual ~Maple();
-
+	
 	Dword hook(int eventType, Dword addr, Dword data);
-
+	
 	class SHCpu *cpu;
-	Byte buttonState[256];
-
+	class Controller *controller;
+	
 	Dword asic9a;
 	Dword asicAckA;
 	Dword g2Fifo;
 	
-private:
+ private:
 	Maple() {}
 	Dword dmaAddr;
-	DeviceInfo gamepad;
 };
 
 #endif
