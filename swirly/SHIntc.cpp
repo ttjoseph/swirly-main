@@ -6,13 +6,15 @@
 #include "Gpu.h"
 #include "SHTmu.h"
 
-#include <list>
+#include <map>
 
 using namespace std;
 
 typedef pair<Dword, Dword> info;
-typedef list<info> intr_list; 
+//typedef list<info> intr_list; 
+typedef multimap<Dword, Dword> intr_list;
 intr_list interrupts;
+intr_list ovInterrupts;	// numIterations overflow interrupts
 
 // time in terms of CPU opcode counts: this is a wild guess
 #define FRAME    0x8000
@@ -26,7 +28,8 @@ SHIntc::SHIntc(): exceptionsPending(0)
 
 void SHIntc::printInterrupts()
 {
-    intr_list::iterator i = interrupts.begin();
+	printf("Current iteration count: 0x%x\n", cpu->numIterations);
+    intr_list::iterator i;
     for(i = interrupts.begin(); i != interrupts.end(); i++)
     {
 	switch (i->second) 
@@ -35,6 +38,19 @@ void SHIntc::printInterrupts()
 	case 1: printf("VBL event in 0x%x iterations\n", i->first); break;
 	case 2: printf("TMU TCNT0 in 0x%x iterations\n", i->first); break;
 	case 3: printf("TMU TCNT1 in 0x%x iterations\n", i->first); break;
+	case 4: printf("TMU TCNT2 in 0x%x iterations\n", i->first); break;
+	}
+    }
+	printf("Overflow interrupt list:\n");
+    for(i = ovInterrupts.begin(); i != ovInterrupts.end(); i++)
+    {
+	switch (i->second) 
+        {
+	case 0: printf("SDL event in 0x%x iterations\n", i->first); break;
+	case 1: printf("VBL event in 0x%x iterations\n", i->first); break;
+	case 2: printf("TMU TCNT0 in 0x%x iterations\n", i->first); break;
+	case 3: printf("TMU TCNT1 in 0x%x iterations\n", i->first); break;
+	case 4: printf("TMU TCNT2 in 0x%x iterations\n", i->first); break;
 	}
     }
 }
@@ -65,6 +81,9 @@ void SHIntc::checkInterrupt()
 	case 3:
 	    tmu->updateTCNT1();
 	    break;
+	case 4:
+	    tmu->updateTCNT2();
+	    break;
 	default:
 	    printf("Unknown Interrupt Type: %d\n", i->second);
 	}
@@ -73,9 +92,21 @@ void SHIntc::checkInterrupt()
     }
 }
 
+void SHIntc::iterationsOverflow()
+{
+    intr_list::iterator i;
+    for(i = ovInterrupts.begin(); i != ovInterrupts.end(); i++) {
+	    interrupts.insert(info(i->first,i->second));
+		ovInterrupts.erase(i);
+	}
+}
+
 void SHIntc::addInterrupt(Dword at, Dword type)
 {
-    interrupts.insert(interrupts.end(), info(cpu->numIterations + at, type));
+	if ((cpu->numIterations + at) > cpu->numIterations)
+	    interrupts.insert(info(cpu->numIterations + at, type));
+	else
+		ovInterrupts.insert(info(cpu->numIterations + at, type));
 }
 
 // XXX: externalIntb and externalIntc could be folded into this function...

@@ -13,6 +13,7 @@ public:
 
 	void updateTCNT0();
 	void updateTCNT1();
+	void updateTCNT2();
 
 private:
 	void update();

@@ -39,6 +39,18 @@ void SHTmu::updateTCNT1()
 	}
 }
 
+void SHTmu::updateTCNT2()
+{
+	if(TSTR & 0x4) {
+		if (TCR2 & 0x20) {
+			intc->internalInt(TMU2, 0x440);
+		}	
+		TCR2 |= 0x100; // turn on TCRx.UNF
+		TCNT2 = TCOR2;
+		intc->addInterrupt(TCNT2 << 4, 4);
+	}
+}
+
 // this function updates the TMU registers according to what
 // logical time it is.  it only needs to be called whenever the
 // registers are accessed, which hook() does automatically.
@@ -114,6 +126,11 @@ Dword SHTmu::hook(int event, Dword addr, Dword data)
 			tcnt1StartTime = cpu->numIterations;
 			intc->addInterrupt(TCNT1 << 4, 3);
 		}
+		if (data & 0x4)  {
+			//printf("Timer 2 started\n");
+			tcnt2StartTime = cpu->numIterations;
+			intc->addInterrupt(TCNT2 << 4, 4);
+		}
 
 	}
 
@@ -125,6 +142,10 @@ Dword SHTmu::hook(int event, Dword addr, Dword data)
 		if ((addr & 0xff)==0x18)  {
 			//printf ("Read Timer 1: %08x\n", (cpu->numIterations - tcnt1StartTime) >> 4);
 			return ((cpu->numIterations - tcnt1StartTime) >> 4);
+		}
+		if ((addr & 0xff)==0x24)  {
+			//printf ("Read Timer 2: %08x\n", (cpu->numIterations - tcnt2StartTime) >> 4);
+			return ((cpu->numIterations - tcnt2StartTime) >> 4);
 		}
 	}
 

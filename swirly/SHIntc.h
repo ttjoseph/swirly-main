@@ -59,6 +59,7 @@ public:
 
 	// interrupts
 	void checkInterrupt();
+	void iterationsOverflow();
 	void addInterrupt(Dword at, Dword type);
 
 	void internalInt(int_source is, int ivt);
@@ -66,7 +67,7 @@ public:
 
 	void externalInt9a(int newAsic);
 	void printInterrupts();
-
+	
 	// exceptions
 	void exception(Dword type, Dword addr, Dword data, char *datadesc = 0);
 	char* getExceptionName(int exception);
