@@ -36,9 +36,11 @@ class Gdrom
 public:
 	void load(char *fname);
 	void hook();
+	void startSector(int startsector) { startSector_ = startsector; }
+	int startSector() { return startSector_; }
 	Gdrom(SHCpu *shcpu, int startsector, int sectorsize = 0);
 	virtual ~Gdrom();
-	int startSector, sectorSize;
+	int startSector_, sectorSize;
 	FILE *cdImage;
 
 private:

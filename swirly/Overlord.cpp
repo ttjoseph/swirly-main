@@ -11,8 +11,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#define MAXCHUNK (2048*1024)
-
 Overlord::Overlord(SHCpu *cpu)
 {
 	this->cpu = cpu;
@@ -22,6 +20,28 @@ Overlord::Overlord(SHCpu *cpu)
 Overlord::~Overlord()
 {
 
+}
+
+void Overlord::handleEvents()
+{
+	int button;
+	SDL_Event e;
+	SDL_PollEvent(&e);
+	switch(e.type)
+	{
+	case SDL_KEYDOWN:
+	case SDL_KEYUP:
+		switch(e.key.keysym.sym)
+		{
+		case SDLK_LEFT: button = BUTTON_LEFT; break;
+		case SDLK_RIGHT: button = BUTTON_RIGHT; break;
+		case SDLK_UP: button = BUTTON_UP; break;
+		case SDLK_DOWN: button = BUTTON_DOWN; break;
+		case SDLK_RETURN: button = BUTTON_START; break;
+		default: button = 0; break;
+		}
+		cpu->maple->buttonState[button] = (e.type == SDL_KEYDOWN);
+	}
 }
 
 // loads and descrambles a file which has been scrambled in the 1ST_READ.BIN style
@@ -42,7 +62,7 @@ void Overlord::loadAndDescramble(FILE *fp, int start, int len, SHCpu *cpu, Dword
 	fread(buf, 1, len, tmpfp);
 	fclose(tmpfp);
 	copyFromHost(cpu, addr, (void*) buf, len);
-	
+
 	unlink(tempFilename);
 	unlink(tempFilename2);
 	delete buf;
@@ -261,7 +281,7 @@ bool Overlord::loadSrec(char *fname)
 		while(type[0] != 'S')
 			fread(&type, 1, 2, fp);
 
-		
+
 		fread(&count, 1, 2, fp);
 		type[2] = count[2] = 0; // null terminate
 		//convertSrecBytes(count, (char*)&numBytes, 1); 

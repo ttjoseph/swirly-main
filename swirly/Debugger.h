@@ -6,6 +6,7 @@
 #define _DEBUGGER_H_
 
 #include "swirly.h"
+#include <cstdio>
 
 #define DBG_MAXBREAKPOINTS 32
 #define DBG_BP_EXECUTION 101
@@ -25,8 +26,10 @@ public:
 	bool dispatchCommand(char *cmd);
   char* getExceptionName(int exception);
   char* disasmInstr(Word d, Dword pc);
+	void reportBranch(char *tag, Dword src, Dword dest);
+	void print(char *fmt, ...);
 
-	bool promptOn;
+	bool promptOn, showStatusMessages;
 
 private:
 	Debugger() {}
@@ -46,12 +49,14 @@ private:
 
 	class SHCpu *cpu;
 	Breakpoint *breakpoints;
+	FILE *branchTraceFile;
 
 	bool isWhitespace(char c);
 	int scanTillWhitespace(char *s);
 	void getToken(char *s, int tokennum, char *putwhere);
 	int scanTillBlackspace(char *s);
 
+	bool cmdTrb(char *cmd);
 	bool cmdU(char *cmd);
 	bool cmdR(char *cmd);
 	bool cmdBm(char *cmd);
@@ -66,7 +71,8 @@ private:
 	bool cmdBx(char *cmd);
 	bool cmdD(char *cmd);
   bool cmdUf(char *cmd);
-
+	bool cmdStat(char *cmd);
+	bool cmdF(char *cmd);
 
 };
 

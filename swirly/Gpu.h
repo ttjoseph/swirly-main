@@ -11,7 +11,8 @@
 #include <SDL/SDL.h>
 
 #define MAXBACKBUFFERS 8
-class Gpu  
+#define BACKBUFFERUNUSED 0xffffffff
+class Gpu
 {
 public:
 	void recvStoreQueue(Dword *sq);
@@ -23,7 +24,7 @@ public:
 	virtual ~Gpu();
 
 	class SHCpu *cpu;
-	
+
 
 private:
 	Gpu() {}
@@ -32,8 +33,9 @@ private:
 	void getFBSettings(Dword *w, Dword *h, Dword *vidbase, Dword *rm, Dword *gm, Dword *bm, Dword *am, Dword *bpp, Dword *mod, Dword *pitch);
 	Dword accessReg(int operation, Dword addr, Dword data);
 	void makeScreen();
+	bool setHost2DVideoMode(int w, int h, int bpp);
 	inline Dword switchEndian(Dword d);
-	
+
 	SDL_Surface *screen, *backBuffer, *backBuffers[MAXBACKBUFFERS];
 	Dword backBufferDCAddrs[MAXBACKBUFFERS];
 	int nextBackBuffer, currentBackBuffer;

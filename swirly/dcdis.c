@@ -7,6 +7,8 @@
  * dcdis is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * Modifications by Tom Joseph <idiot@users.sourceforge.net>
 */
 
 #include "dcdis.h"

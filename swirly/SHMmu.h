@@ -16,12 +16,14 @@
 #define MMU_SOUNDMEM_SIZE (1048576 * 2)
 
 // values used internally for SHMmu::eventType
-#define MMU_READ_BYTE 10
-#define MMU_READ_WORD 11
-#define MMU_READ_DWORD 12
-#define MMU_WRITE_BYTE 13
-#define MMU_WRITE_WORD 14
-#define MMU_WRITE_DWORD 15
+#define MMU_READ 0x0100
+#define MMU_READ_BYTE 0x0110
+#define MMU_READ_WORD	0x0111
+#define MMU_READ_DWORD 0x0112
+#define MMU_WRITE 0x0200
+#define MMU_WRITE_BYTE 0x0213
+#define MMU_WRITE_WORD 0x0214
+#define MMU_WRITE_DWORD 0x0215
 // junk value to signal a TLB miss internally
 #define MMU_TLB_MISS 0xffffff00
 
@@ -58,6 +60,7 @@ public:
 	void writeDouble(Dword addr, Double d);
 	Word fetchInstruction(Dword addr);
 	void writeDword(Dword addr, Dword d);
+	void writeDwordToExternal(Dword addr, Dword d);
 	void writeWord(Dword addr, Word d);
 	void writeByte(Dword addr, Byte d);
 	Dword readDword(Dword addr);
@@ -71,7 +74,7 @@ public:
 
 private:
   SHMmu() {}
-	
+
 	int searchItlb(Dword addr);
 	void updateMmucrUrc();
 	int searchUtlb(Dword addr);
@@ -81,7 +84,7 @@ private:
 
 	int eventType; // used internally to decide what exception to raise
 	Dword tempData, accessAddr;
-	
+
 	// TLB
 	Dword UTLB_Addr[64];
 	Dword UTLB_Data1[64];
@@ -92,9 +95,6 @@ private:
 
 	// Store queues
 	Dword SQ0[8], SQ1[8];
-	
-	// local TLB - caches output of translateVirtual
-
 };
 
 #endif

@@ -1,9 +1,7 @@
-// Main header file for Swirly
-
 #ifndef _SWIRLY_H_
 #define _SWIRLY_H_
+// Main header file for Swirly
 
-// #define VERSION_STRING "Swirly 1.0 - built on " __DATE__ " at " __TIME__ " - private version"
 #define VERSION_STRING "Swirly 1.0"
 
 typedef unsigned char Byte;  // 8 bits
@@ -24,28 +22,39 @@ typedef float Float;  // also just in case - should be 32 bits
 #define HOOK_GDROM 1
 #define HOOK_LOAD1STREAD 2
 
-// i could have used hex here - would have been easier
-#define D0 1
-#define D1 2
-#define D2 4
-#define D3 8
-#define D4 16
-#define D5 32
-#define D6 64
-#define D7 128
-#define D8 256
-#define D9 512
-#define D10 1024
-#define D11 2048
-#define D12 4096
-#define D13 8192
-#define D14 16384
-#define D15 32768
-#define D16 65536
-#define D17 131072
-#define D18 262144
-#define D19 524288
-#define D20 1048576
-#define D21 2097152
+// darn lack of binary notation in C++
+#define D0  0x00000001
+#define D1  0x00000002
+#define D2  0x00000004
+#define D3  0x00000008
+#define D4  0x00000010
+#define D5  0x00000020
+#define D6  0x00000040
+#define D7  0x00000080
+#define D8  0x00000100
+#define D9  0x00000200
+#define D10 0x00000400
+#define D11 0x00000800
+#define D12 0x00001000
+#define D13 0x00002000
+#define D14 0x00004000
+#define D15 0x00008000
+#define D16 0x00010000
+#define D17 0x00020000
+#define D18 0x00040000
+#define D19 0x00080000
+#define D20 0x00100000
+#define D21 0x00200000
+#define D22 0x00400000
+#define D23 0x00800000
+#define D24 0x01000000
+#define D25 0x02000000
+#define D26 0x04000000
+#define D27 0x08000000
+#define D28 0x10000000
+#define D29 0x20000000
+#define D30 0x40000000
+#define D31 0x80000000
 
 #endif
+

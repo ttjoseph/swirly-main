@@ -27,6 +27,7 @@ public:
 	static void load(FILE *fp, int start, int len, SHCpu *cpu, Dword addr);
 	static Dword switchEndian(Dword d);
 	void getString(char *buf, int buflen);
+	void handleEvents();
 	
 	struct NumberName
 	{

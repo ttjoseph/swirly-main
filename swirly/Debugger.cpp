@@ -33,12 +33,7 @@ Overlord::NumberName exceptionList[] =
 	{-1, "[-1 is not an exception]"}
 };
 
-
-//////////////////////////////////////////////////////////////////////
-// Construction/Destruction
-//////////////////////////////////////////////////////////////////////
-
-Debugger::Debugger(class SHCpu *shcpu) : cpu(shcpu)
+Debugger::Debugger(class SHCpu *shcpu) : showStatusMessages(true), cpu(shcpu), branchTraceFile(NULL)
 {
 	// create the breakpoint list
 	breakpoints = new Breakpoint[DBG_MAXBREAKPOINTS];
@@ -52,7 +47,20 @@ Debugger::Debugger(class SHCpu *shcpu) : cpu(shcpu)
 
 Debugger::~Debugger()
 {
+	if(branchTraceFile)
+		fclose(branchTraceFile);
 	delete breakpoints;
+}
+
+void Debugger::print(char *fmt, ...)
+{
+	if(showStatusMessages)
+	{
+		va_list mrk;
+		va_start(mrk, fmt);
+		vprintf(fmt, mrk);
+		va_end(mrk);
+	}
 }
 
 // we want to keep these from ever occurring...
@@ -60,14 +68,11 @@ void Debugger::flamingDeath(char *fmt, ...)
 {
 	printf("************ FLAMING DEATH ************\n");
 	dumpRegs();
-	// if too many exceptions are pending we don't want to cause another one
+	// if an exception is pending we don't want to cause another one
 	if(cpu->exceptionsPending <= 1)
 	{
-//		disasmOn = true;
 		Word d = cpu->mmu->fetchInstruction(cpu->PC);
-		printf("%08X: %04x: %s", cpu->PC, d, disasmInstr(d, cpu->PC));		
-//		printf("%08X: %04x: ", cpu->PC, d);
-//		cpu->executeInstruction(d);
+		printf("%08X: %04x: %s", cpu->PC, d, disasmInstr(d, cpu->PC));
 	}
 	else
 		printf("PC: %08X", cpu->PC);
@@ -77,11 +82,32 @@ void Debugger::flamingDeath(char *fmt, ...)
 	vprintf(fmt, mrk);
 	va_end(mrk);
 	printf("\n");
-/*	printf("\nPress enter to exit...");
-	getchar(); */
 	exit(1);
 }
 
+// Reports a branch in execution so it can be logged to the
+// branch trace if needed.
+void Debugger::reportBranch(char *tag, Dword src, Dword dest)
+{
+	static Dword last_src = 0, last_dest = 0;
+	static int count = 0;
+
+	if(branchTraceFile)
+	{
+		if((last_src == src) && (last_dest == dest))
+			count++;
+		else
+		{
+			if(count > 0)
+				fprintf(branchTraceFile, "\trepeated %d times\n", count);
+			else
+				fprintf(branchTraceFile, "%08x: %s %08x\n", src, tag, dest);
+			count = 0;
+		}
+		last_src = src;
+		last_dest = dest;
+	}
+}
 
 // dumps registers
 void Debugger::dumpRegs()
@@ -90,7 +116,7 @@ void Debugger::dumpRegs()
 	for(i=0;i<16;i+=2)
 	{
 		printf("R%-2d: %08X   R%-2d: %08X  ", i, cpu->R[i], i+1, cpu->R[i+1]);
-		
+
 		if(i==0) // print cpu->SR
 		{
 			printf("SR: [");
@@ -133,7 +159,7 @@ void Debugger::dumpRegs()
 				Overlord::bits(mmucr, 9, 9) ? "SQMD" : "    ",
 				Overlord::bits(mmucr, 8, 8) ? "SV" : "  ",
 				Overlord::bits(mmucr, 2, 2) ? "TI" : "  ",
-				Overlord::bits(mmucr, 0, 0) ? "AT" : "  ");				
+				Overlord::bits(mmucr, 0, 0) ? "AT" : "  ");
 		}
 		if(i==14)
 		{
@@ -153,13 +179,13 @@ void Debugger::checkExecBp()
 {
 	if(execBpSet == false)
 		return;
-		
+
 	for(int i=0;i<=maxExecBp;i++)
 	{
 		if(breakpoints[i].valid && breakpoints[i].type == DBG_BP_EXECUTION &&
 			(cpu->PC == breakpoints[i].addr))
 		{
-			printf("Breakpoint %d hit.\n", i);
+			printf("Breakpoint %d (execution at %08x) hit.\n", i, breakpoints[i].addr);
 			promptOn = true;
 		}
 	}
@@ -191,12 +217,12 @@ bool Debugger::dispatchCommand(char *cmd)
 	char firstToken[256];
 
 	getToken(cmd, 0, firstToken);
-	
+
 	if(strlen(firstToken) == 0)
 		return 1;
 
 #define DO_CMD(a, b) if(strcmp(a, firstToken)==0) return b(cmd)
-	
+
 	DO_CMD("d", cmdD);
 	DO_CMD("bx", cmdBx);
 	DO_CMD("bl", cmdBl);
@@ -211,9 +237,12 @@ bool Debugger::dispatchCommand(char *cmd)
 	DO_CMD("u", cmdU);
 	DO_CMD("df", cmdDf);
 	DO_CMD("uf", cmdUf);
+	DO_CMD("trb", cmdTrb);
+	DO_CMD("stat", cmdStat);
+	DO_CMD("f", cmdF);
 
 #undef DO_CMD
-	
+
 	printf("%s: What does that mean?\n", firstToken);
 	return 0;
 }
@@ -295,7 +324,7 @@ bool Debugger::cmdD(char *cmd)
 		addr = 0;
 	else
 		sscanf(addx, "%x", &addr);
-	
+
 	for(i=addr;i<(addr+rowlen*numrows);i+=rowlen)
 	{
 		printf("%08X: ", i);
@@ -316,13 +345,56 @@ bool Debugger::cmdD(char *cmd)
 	return false;
 }
 
+// toggle reporting of status messages on and off
+bool Debugger::cmdStat(char *cmd)
+{
+	showStatusMessages = !showStatusMessages;
+	// yeah this is kinda pointless - so sue me
+	printf("Status messages turned o");
+	if(showStatusMessages)
+		printf("n.\n");
+	else
+		printf("ff.\n");
+	return false;
+}
+
+// toggle branch trace logging on and off
+// defaults to ./branch_trace.log
+bool Debugger::cmdTrb(char *cmd)
+{
+	if(branchTraceFile)
+	{
+		fprintf(branchTraceFile,
+			"--> PC=%08X: Branch trace logging turned off <--\n", cpu->PC);
+		fclose(branchTraceFile);
+		branchTraceFile = NULL;
+		printf("Branch trace logging is off.\n");
+	} else
+	{
+		char fname[255];
+		getToken(cmd, 1, fname);
+		if(strlen(fname) == 0)
+			strcpy(fname, "branch_trace.log");
+		branchTraceFile = fopen(fname, "a");
+		if(branchTraceFile == NULL)
+		{
+			printf("Error opening %s to use as the branch trace log.\n", fname);
+			return false;
+		}
+		fprintf(branchTraceFile,
+			"--> PC=%08X: Branch trace logging turned on <--\n", cpu->PC);
+		printf("Branch trace logging is on.\n");
+	}
+	return false;
+}
+
 // debugger command to set an execution breakpoint
 bool Debugger::cmdBx(char *cmd)
 {
 	Dword addr;
 	int i;
 	char tmp[255];
-	
+
 	getToken(cmd, 1, tmp);
 	if(strlen(tmp) == 0)
 	{
@@ -342,11 +414,8 @@ bool Debugger::cmdBx(char *cmd)
 	execBpSet = true;
 
 	updateMaxBp(DBG_BP_EXECUTION, &maxExecBp);
-	
 	printf("Breakpoint %d at PC=%08X has been set.\n", i, addr);
-	
 	return false;
-
 }
 
 // debugger command to exit the program
@@ -456,7 +525,7 @@ bool Debugger::cmdBm(char *cmd)
 {
 	int i;
 	char tmp[255];
-	
+
 	getToken(cmd, 1, tmp);
 
 	for(i=0;i<DBG_MAXBREAKPOINTS;i++)
@@ -505,7 +574,7 @@ bool Debugger::cmdR(char *cmd)
 	sscanf(value, "%x", &val);
 
 #define DO_REG(a, b) if(strcmp(reg, a) == 0) realaddr = &(b)
-	
+
 	DO_REG("r0", cpu->R[0]);
 	DO_REG("r1", cpu->R[1]);
 	DO_REG("r2", cpu->R[2]);
@@ -523,12 +592,16 @@ bool Debugger::cmdR(char *cmd)
 	DO_REG("r14", cpu->R[14]);
 	DO_REG("r15", cpu->R[15]);
 	DO_REG("pc", cpu->PC);
+	DO_REG("spc", cpu->SPC);
 	DO_REG("pr", cpu->PR);
-	
+	DO_REG("sr", cpu->SR);
+	DO_REG("gbr", cpu->GBR);
+	DO_REG("vbr", cpu->VBR);
+
 #undef DO_REG
 
 	*realaddr = val;
-	
+
 	return false;
 }
 
@@ -541,29 +614,48 @@ bool Debugger::cmdUf(char *cmd)
 	return false;
 }
 
+// executes until an rte or rts
+bool Debugger::cmdF(char *cmd)
+{
+	Word d;
+
+	promptOn = false;
+
+	while(promptOn == false)
+	{
+		d = cpu->mmu->fetchInstruction(cpu->PC);
+		if((d == 0x002b) || (d == 0x000b))
+			promptOn = true;
+		else
+			cpu->executeInstruction(d);
+	}
+
+	return false;
+}
+
 // disassembles memory - XXX: doesn't work
 bool Debugger::cmdU(char *cmd)
 {
 	char buf[64];
 	Dword addr, numbytes, foo;
-	
+
 	getToken(cmd, 1, buf);
 	sscanf(buf, "%x", &addr);
 
 	getToken(cmd, 2, buf);
 	numbytes = 128;
 	foo = sscanf(buf, "%x", &numbytes);
-	
+
 	printf("This command doesn't work yet.\n");
-	
+
 	return false;
 }
 
-// dumps an arbitrary memory location (our memory, not SH's specifically)
+// dumps an arbitrary memory location (in host address space, not SH's)
 // to a file.
 void Debugger::dumpToFile(char *addr, int length, char *fname)
 {
-	int blockLen = 4096;
+	static const int blockLen = 4096;
 	int numBlocks = length/blockLen;
 	int overflow = length%blockLen;
 

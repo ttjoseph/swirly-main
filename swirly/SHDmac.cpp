@@ -12,6 +12,6 @@ SHDmac::~SHDmac()
 
 Dword SHDmac::hook(int event, Dword addr, Dword data)
 {
-	printf("DMAC access at %08X, PC=%08X\n", addr, cpu->PC);
+	cpu->debugger->print("Dmac: access at %08X, PC=%08X\n", addr, cpu->PC);
 	return 0xdeadbeef;
 }

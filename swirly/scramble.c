@@ -1,5 +1,6 @@
-// This is Marcus' code--this entire file.  Swirly uses it to descramble the
+// This is Marcus Comstedt's code--this entire file.  Swirly uses it to descramble the
 // 1ST_READ.BIN.  All I did was comment out the main().
+// Available at http://mc.pp.se/dc
 
 #include <stdio.h>
 #include <stdlib.h>

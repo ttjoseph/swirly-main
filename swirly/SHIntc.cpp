@@ -1,4 +1,4 @@
-// implementation of the SH4 INTC
+// implementation (heh) of the SH4 INTC
 
 #include "SHIntc.h"
 
@@ -14,6 +14,6 @@ SHIntc::~SHIntc()
 
 Dword SHIntc::hook(int event, Dword addr, Dword data)
 {
-	printf("INTC access at %08X, PC=%08X\n", addr, cpu->PC);
+	cpu->debugger->print("Intc: access at %08X, PC=%08X\n", addr, cpu->PC);
 	return 0xdeadbeef;
 }

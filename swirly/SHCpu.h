@@ -58,13 +58,6 @@
 #define S (((struct SR_t *)(&SR))->S0)
 #define T (((struct SR_t *)(&SR))->T0)
 
-// FIXME: put this functionality in the debugger class
-#define DIS(a,b,c) if(debugger->disasmOn) printf(a,b,c); if(debugger->disasmOn) return
-#define DIS0(a) if(debugger->disasmOn) printf(a); if(debugger->disasmOn) return
-#define DIS1(a,b) if(debugger->disasmOn) printf(a,b); if(debugger->disasmOn) return
-#define DIS3(a,b,c,d) if(debugger->disasmOn) printf(a,b,c,d); if(debugger->disasmOn) return
-#define DIS4(a,b,c,d,e) if(debugger->disasmOn) printf(a,b,c,d,e); if(debugger->disasmOn) return
-
 // exception codes
 #define E_USER_BREAK_BEFORE_INSTRUCTION_EXECUTION 0x1e0
 #define E_INSTRUCTION_ADDRESS_ERROR             0x0e0
@@ -87,15 +80,16 @@
 extern "C"
 {
 void shfpu_setContext(float *FR, float *XF, float *FPUL, Dword *FPSCR);
+void shcpu_DO_MACL(Sdword rn, Sdword rm, Dword *mach, Dword *macl);
 void shfpu_sFLOAT();
 void shfpu_sFMUL();
 }
 
-class SHCpu  
+class SHCpu
 {
 public:
 	void go();
-	void exception(Dword type, Dword addr, Dword data);
+	void exception(Dword type, Dword addr, Dword data, char *datadesc = 0);
 	void executeInstruction(Word d);
 	void reset();
 	void delaySlot();
@@ -124,7 +118,7 @@ public:
 	class Gdrom *gdrom;
 	class Spu *spu;
 	class Maple *maple;
-	
+
 	class Overlord *overlord;
 
 	// This is used to make accessing SR flags easier.
@@ -186,6 +180,7 @@ private:
 	void LDSFPUL(int n);
   void LDSMFPSCR(int n);
   void LDSMFPUL(int n);
+
 	// the non-FP instructions
 	void ADD(int m, int n);
 	void ADDI(Byte i, int n);
@@ -340,9 +335,13 @@ private:
 	void STSMACH(int n);
 	void STSMACL(int n);
 	void STSPR(int n);
+	void STSFPSCR(int n);
+	void STSFPUL(int n);
 	void STSMMACH(int n);
 	void STSMMACL(int n);
 	void STSMPR(int n);
+	void STSMFPSCR(int n);
+	void STSMFPUL(int n);
 	void SUBC(int m, int n);
 	void SUB(int m, int n);
 	void SUBV(int m, int n);

@@ -21,7 +21,8 @@ void sigintHandler(int signal)
 
 int main(int argc, char *argv[])
 {
-	printf(VERSION_STRING " - compiled on " __DATE__ " at " __TIME__ "\n\n");
+	printf(VERSION_STRING " - compiled on " __DATE__ " at " __TIME__ "\n");
+	printf("Distributed under the GNU General Public License, version 2\n\n");
 
 	// SIGINT isn't supposed to work on Win32 so we won't even try
 #ifndef _WIN32
@@ -43,31 +44,32 @@ int main(int argc, char *argv[])
 
 	// load the boot ROM
 	printf("Loading boot ROM...");
-	o->load("../fakebootrom/fbr.bin", 0xA0000000);
-	//o->load("bootrom.bin", 0xA0000000);
+	//o->load("../fakebootrom/fbr.bin", 0xA0000000);
+	o->load("../images/fbr.bin", 0xa0000000);
 	printf("done.\n");
 
 	// load the flash memory
-	printf("Loading flash (nonessential image)...");
-	o->loadToHost("../images/flash", (Dword) cpu->mmu->flash);
-	printf("done.\n");
+	//printf("Loading flash (nonessential image)...");
+	//o->loadToHost("../images/flash", (Dword) cpu->mmu->flash);
+	//printf("done.\n");
 
 	// load the images we're going to run
 	printf("Loading images...");
 	//o->loadIso("ip.bin", 0x8c008000);
-	o->load("../images/IP.BIN", 0x8c008000);
-	//o->load("/mnt/d/dc/sandbox/3dtest.bin", 0x8c010000);
-	//o->load("/home/tom/dc/dc-progs/tatest/tatest.1stread_unscrambled.bin", 0x8c010000);
-	//o->loadSrec("/home/tom/dc/dc-progs/tatest/tatest.srec");
-	o->loadSrec("../images/stars.srec");
-	//cpu->gdrom->load("../images/dccdx-fixed.iso");
+	o->load("../images/swirly-ip.bin", 0x8c008000);
+	o->load("../images/video.bin", 0x8c010000);
+	//o->loadSrec("../images/stars.srec");
+	//o->loadSrec("../images/mapletest.srec");
+	//o->loadSrec("../images/videotest.srec");
+	//cpu->gdrom->startSector(0);
+	//cpu->gdrom->load("something.iso");
 	printf("done.\n");
 
 	printf("Fasten your seatbelts.\n\n");
 	// PC should be 0xA0000000 at this point
 	cpu->go();
 
-	SDL_FreeSurface(icon); // as if we ever reach here anyway...
+	SDL_FreeSurface(icon); // as if we ever reach here anyway
 
 	return 0;
 }

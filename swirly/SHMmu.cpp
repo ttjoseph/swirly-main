@@ -75,6 +75,14 @@ void SHMmu::writeDword(Dword addr, Dword d)
 	access(translateVirtual(addr), MMU_WRITE_DWORD);
 }
 
+void SHMmu::writeDwordToExternal(Dword addr, Dword d)
+{
+	eventType = MMU_WRITE_DWORD;
+	tempData = d;
+	accessAddr = addr;
+	access(addr, MMU_WRITE_DWORD);
+}
+
 void SHMmu::writeDouble(Dword addr, Double d)
 {
 	cpu->debugger->flamingDeath("writeDouble not implemented yet");
@@ -108,7 +116,7 @@ Word SHMmu::fetchInstruction(Dword addr)
 {
 	unsigned int theentry;
 	Dword lrui, utlbentry;
-	
+
 	eventType = MMU_READ_WORD;
 	
 	switch(addr >> 29) // check which area we want
@@ -142,12 +150,12 @@ Word SHMmu::fetchInstruction(Dword addr)
 						theentry = 3;
 					else
 						cpu->debugger->flamingDeath("MMUCR.LRUI is set to some weird setting!");
-					
+
 					ITLB_Addr[theentry] = UTLB_Addr[utlbentry];
 					ITLB_Data1[theentry] = UTLB_Data1[utlbentry];
 					ITLB_Data2[theentry] = UTLB_Data2[utlbentry];
-					
 				} // if(can't find entry)
+
 				// now we've found an entry!
 				// let's update LRUI now.
 				switch(theentry)
@@ -169,7 +177,7 @@ Word SHMmu::fetchInstruction(Dword addr)
 				default:
 					cpu->debugger->flamingDeath("Trying to look at an ITLB entry that can't exist.");
 				}
-				
+
 				if(cpu->SR & F_SR_MD) // SR.MD == 1?
 				{
 					// if we're privileged we can do anything
@@ -208,7 +216,6 @@ Word SHMmu::fetchInstruction(Dword addr)
 							case 9: // 1M pages
 								return (GETWORD(((ITLB_Data1[theentry] & 0x1ff00000) | (addr & 0xfffff))));
 						}
-						
 					}
 					else
 					{
@@ -224,8 +231,8 @@ Word SHMmu::fetchInstruction(Dword addr)
 				access(addr, MMU_READ_WORD);
 				return (Word) tempData;
 			} // if MMUCR.AT == 1
-			
 			break; // P0, U0, P3
+
 	case 5: // P2
 	case 4: // P1
 		if(cpu->SR & F_SR_MD) // no address translation
@@ -241,14 +248,15 @@ Word SHMmu::fetchInstruction(Dword addr)
 		}
 		break;
 	} // switch(addr >> 29)
+	cpu->debugger->flamingDeath("Reached a point in SHMmu::fetchInstruction that we should never reach");
 	return 0; // shouldn't ever reach here
 }
 
-// translates an SH virtual address to an offset in mem
+// translates an SH virtual address to an external address
 Dword SHMmu::translateVirtual(Dword addr)
 {
 	cpu->debugger->checkMemBp(addr);
-	
+
 	unsigned int theentry;
 	// TODO: make this actually work
 	switch(addr >> 29)
@@ -264,19 +272,13 @@ Dword SHMmu::translateVirtual(Dword addr)
 				// we couldn't find an entry, so throw an exception
 				if(theentry == MMU_TLB_MISS)
 				{
-					switch(eventType)
-					{
-					case MMU_READ_BYTE:
-					case MMU_READ_WORD:
-					case MMU_READ_DWORD:
+					if(eventType & MMU_READ)
 						cpu->exception(E_DATA_TLB_MISS_READ, addr, 0);
-						break;
-					case MMU_WRITE_BYTE:
-					case MMU_WRITE_WORD:
-					case MMU_WRITE_DWORD:
+					else if(eventType & MMU_WRITE)
 						cpu->exception(E_DATA_TLB_MISS_WRITE, addr, 0);
-						break;					
-					}
+					else
+						cpu->debugger->flamingDeath("Something's fishy here - unknown MMU operation");
+
 					return 0;
 				} // if(can't find entry)
 				// Now we know that VPNs match and V=1(the entry is valid)
@@ -288,9 +290,7 @@ Dword SHMmu::translateVirtual(Dword addr)
 					{
 					case 0:
 					case 2:
-						if( (eventType==MMU_WRITE_BYTE) ||
-						    (eventType==MMU_WRITE_WORD) ||
-						    (eventType==MMU_WRITE_DWORD) )
+						if(eventType & MMU_WRITE)
 						{
 							cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
 							return 0;
@@ -319,15 +319,10 @@ Dword SHMmu::translateVirtual(Dword addr)
 					case 3:
 					 	// check dirty bit to see if we need an inital page write exception
 					 	// that's bit 9 in UTLB_Addr
-					 	if((eventType==MMU_WRITE_BYTE) ||
-					 	   (eventType==MMU_WRITE_WORD) ||
-					 	   (eventType==MMU_WRITE_DWORD) )
+						if((eventType & MMU_WRITE) && ((UTLB_Addr[theentry] & 0x200) == 0))
 					 	{
-					 	 	if((UTLB_Addr[theentry] & 0x200) == 0)
-					 	 	{
-					 	 		cpu->exception(E_INITAL_PAGE_WRITE, addr, 0);
-					 	 		return 0;
-					 	 	}
+				 	 		cpu->exception(E_INITAL_PAGE_WRITE, addr, 0);
+				 	 		return 0;
 					 	}
 					 	// yay! success!
 						// now we figure the page size and then return the correct
@@ -353,9 +348,7 @@ Dword SHMmu::translateVirtual(Dword addr)
 					{
 						case 0:
 						case 1:
-						 	if((eventType==MMU_WRITE_BYTE) ||
-						 	   (eventType==MMU_WRITE_WORD) ||
-						 	   (eventType==MMU_WRITE_DWORD) )
+							if(eventType & MMU_WRITE)
 				 		 		cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
 						 	else
 						 		cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_READ, addr, 0);
@@ -363,9 +356,7 @@ Dword SHMmu::translateVirtual(Dword addr)
 							break;
 						case 2:
 						 	// can't write with PR set to 2
-						 	if((eventType==MMU_WRITE_BYTE) ||
-						 	   (eventType==MMU_WRITE_WORD) ||
-						 	   (eventType==MMU_WRITE_DWORD) )
+							if(eventType & MMU_WRITE)
 						 	{
 				 		 		cpu->exception(E_DATA_TLB_PROTECTION_VIOLATION_WRITE, addr, 0);
 				 		 		return 0;
@@ -394,7 +385,7 @@ Dword SHMmu::translateVirtual(Dword addr)
 			else // no address translation, just zero 3 high bits
 				return addr & 0x1fffffff;
 			break; // PO, UO, P3
-		
+
 		case 4: // P1
 		case 5: // P2
 		if(cpu->SR & F_SR_MD) // gotta be privileged to access P1
@@ -403,25 +394,13 @@ Dword SHMmu::translateVirtual(Dword addr)
 		}
 		else // user mode can't touch this area
 		{
-			switch(eventType)
-			{
-			case MMU_READ_BYTE:
-			case MMU_READ_WORD:
-			case MMU_READ_DWORD:		
+			if(eventType & MMU_READ)
 				cpu->exception(E_DATA_ADDRESS_ERROR_READ, addr, 0);
-				break;
-			case MMU_WRITE_BYTE:
-			case MMU_WRITE_WORD:
-			case MMU_WRITE_DWORD:
+			else if(eventType & MMU_WRITE)
 				cpu->exception(E_DATA_ADDRESS_ERROR_WRITE, addr, 0);
-				break;
-			}
-			
+			else
+				cpu->debugger->flamingDeath("Oh gosh no.  Unknown MMU operation.");
 			return 0;
-			
-			// now the problem should be fixed
-			// otherwise we'll be doing this infinitely
-			// return mmuTranslateVirtual(addr, eventType);
 		}
 
 		// XXX: we shouldn't ever reach here -- P4 should be caught before this
@@ -454,7 +433,6 @@ int SHMmu::checkAsids(Dword tlbentry)
 	}
 	else // they don't have to match, so say everything's ok
 		return 1;
-
 }
 
 int SHMmu::searchUtlb(Dword addr)
@@ -521,7 +499,7 @@ void SHMmu::ldtlb()
 void SHMmu::storeQueueSend(Dword target)
 {
 	Dword *sq, addr, qacr;
-	
+
 	if(((target >> 5) & 1) == 0)
 	{
 		sq = SQ0;
@@ -532,25 +510,18 @@ void SHMmu::storeQueueSend(Dword target)
 		sq = SQ1;
 		qacr = CCNREG(QACR1);
 	}
-	
-	addr = (target & 0x03ffffe0) | ((qacr & 0x38) << 24);
-	
-	// DEBUG
-	/*if(target == 0xe0425980)
-	{
-		printf("-----> target %08x qacr %x addr %08x\n", target, qacr, addr);
-		cpu->debugger->promptOn = true;	
-	} */
 
-	// Special case the tile accelerator
+	addr = (target & 0x03ffffe0) | ((qacr & 0x38) << 24);
+
+	// XXX: Special case the tile accelerator
 	if(addr == 0x10000000)
 	{
 		cpu->gpu->recvStoreQueue(sq);
 		return;
 	}
-	
+
 	eventType = MMU_WRITE_DWORD;
-	
+
 	for(int i=0; i<8; i++)
 	{
 		tempData = sq[i];
@@ -563,7 +534,7 @@ void SHMmu::storeQueueSend(Dword target)
 Dword SHMmu::accessP4()
 {
 	Dword realAddr= 0, addr = accessAddr & 0xffffff;
-	
+
 	// XXX: Store queues don't work when AT is on
 	// Handle store queue access
 	// Accesses to this area should always be writes...
@@ -573,10 +544,10 @@ Dword SHMmu::accessP4()
 		if(((accessAddr >> 5) & 1) == 0)
 			SQ0[(accessAddr >> 2) & 7] = tempData;
 		else
-			SQ1[(accessAddr >> 2) & 7] = tempData;		
+			SQ1[(accessAddr >> 2) & 7] = tempData;
 		return tempData;
 	}
-	
+
 	switch(addr >> 16)
 	{
 	case 0x00: realAddr = (Dword) cpu->ccnRegs + (accessAddr & 0xff); break;
@@ -601,16 +572,14 @@ Dword SHMmu::accessP4()
 	return tempData;
 }
 
-// kitchen-sink function to perform a memory access
+// kitchen-sink function to perform a memory access given an external address
 // accepts and returns data in this->tempData
 Dword SHMmu::access(Dword externalAddr, int accessType)
 {
-	// translateVirtual should return a physical address for all except
-	// P4 / area 7
 	Dword realAddr = 0;
-	
+
 	// TODO: check for exceptions
-	
+
 	// map to external memory
 
 	// bits 31-29: specifies section of address space
@@ -637,7 +606,7 @@ Dword SHMmu::access(Dword externalAddr, int accessType)
 				case 0x8000: return(tempData = cpu->gpu->hook(eventType, accessAddr, tempData));
 				case 0x6000: return(tempData = cpu->maple->hook(eventType, accessAddr, tempData));
 				default:
-//					printf("SHMmu::access: can't handle access to external addr %08X, PC=%08X\n", externalAddr, cpu->PC);
+					cpu->debugger->print("SHMmu::access: can't handle access to external addr %08X, PC=%08X\n", externalAddr, cpu->PC);
 					return 0xdeadbeef;
 				}
 				break;
@@ -659,10 +628,10 @@ Dword SHMmu::access(Dword externalAddr, int accessType)
 				realAddr = externalAddr & 0xfff;
 			realAddr += (Dword) cache;
 			break;
-		}				
+		}
 	} else // do P4 stuff
 		return accessP4();
-	
+
 	switch(accessType)
 	{
 	case MMU_READ_BYTE:	tempData = *((Byte*)(realAddr)); break;

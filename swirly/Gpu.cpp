@@ -3,6 +3,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include <string.h>
 #include <signal.h>
 #include "Gpu.h"
 #include "SHMmu.h"
@@ -18,11 +19,11 @@ Gpu::Gpu(class SHCpu *shcpu) : cpu(shcpu)
 	nextBackBuffer = 0;
 	dwordsReceived = 0;
 	dwordsNeeded = 0;
-	
+
 	for(int i=0; i<8; i++)
 	{
 		backBuffers[i] = NULL;
-		backBufferDCAddrs[i] = 0;
+		backBufferDCAddrs[i] = BACKBUFFERUNUSED;
 	}
 	signal(SIGSEGV, SIG_DFL); // try and avoid the SDL parachute
 }
@@ -47,11 +48,11 @@ Dword Gpu::hook(int eventType, Dword addr, Dword data)
 		return 0;
 
 	case MMU_READ_DWORD:
-//		printf("GPU read %08X  data: %08x  PC: %08X\n", addr, data, cpu->PC);
+//		cpu->debugger->print("GPU read %08X  data: %08x  PC: %08X\n", addr, data, cpu->PC);
 		return accessReg(REG_READ, addr, data);
 
 	case MMU_WRITE_DWORD:
-//		printf("GPU write %08X  data: %08x  PC: %08x\n", addr, data, cpu->PC);
+//		cpu->debugger->print("GPU write %08X  data: %08x  PC: %08x\n", addr, data, cpu->PC);
 		accessReg(REG_WRITE, addr, data);
 		return 0;
 	}
@@ -70,7 +71,7 @@ Dword Gpu::accessReg(int operation, Dword addr, Dword data)
 		handleTaWrite(addr, data);
 		return 0;
 	}
-	
+
 	// first figure out where in the array we want to look
 	if((addr & 0xffff0000) == 0xa05f0000)
 		realaddr = gpuRegs;
@@ -101,19 +102,19 @@ Dword Gpu::accessReg(int operation, Dword addr, Dword data)
 		{
 		case 0xa05f8014: // Flush TA pipeline - begin render
 			// we defer flushing the OpenGL pipeline until we're about to swap buffers
-//			printf("Gpu: Flush TA pipeline\n");
+//			cpu->debugger->print("Gpu: Flush TA pipeline\n");
 			break;
 
 		case 0xa05f80a8: // magic TA register
 			// we are now in 3D land...
 			if(data == 0x15d1c951) // what on earth is this?
 			{
-				printf("Gpu::accessReg: TA enabled.\n");
+				cpu->debugger->print("Gpu::accessReg: TA enabled.\n");
 				setupGL();
 			}
 		}
 		realaddr[regoffs] = data;
-		
+
 		// don't create a new screen unless there's a write to a certain
 		// arbitrary range of GPU registers
 		if(((regoffs >= 0x8044) & (regoffs <= 0x805c)) || (regoffs == 0x80ec))
@@ -165,16 +166,18 @@ void Gpu::makeScreen()
 	// XXX: for now we won't support interlaced mode.
 
 	int bbNum = 0;
-	while((bbNum < MAXBACKBUFFERS) && (backBufferDCAddrs[bbNum] != 0))
+	while((bbNum < MAXBACKBUFFERS) && (backBufferDCAddrs[bbNum] != BACKBUFFERUNUSED))
 	{
 		// XXX: do more extensive checking to make sure we are still in the same
 		// video mode, etc.
-		if((backBufferDCAddrs[bbNum] == vidbase) && 
+		if((backBufferDCAddrs[bbNum] == vidbase) &&
 			(backBuffers[bbNum]->format->BitsPerPixel == bpp))
 		{
-			printf("Gpu::makeScreen: Reused backbuffer %d.\n", bbNum);
+			cpu->debugger->print("Gpu::makeScreen: Reused backbuffer %d at %08x, bpp = %d.\n", bbNum, vidbase, bpp);
 			backBuffer = backBuffers[bbNum];
 			currentBackBuffer = bbNum;
+			if((screen == NULL) || (screen->format->BitsPerPixel != bpp) || (screen->w != width) || (screen->h != height))
+				setHost2DVideoMode(width, height, bpp);
 			return;
 		}
 		bbNum++;
@@ -182,8 +185,8 @@ void Gpu::makeScreen()
 	if(bbNum >= MAXBACKBUFFERS)
 		cpu->debugger->flamingDeath("Gpu::makeScreen: too many back buffers allocated!");
 
-	printf("**** Gpu::makeScreen: RESETTING VIDEO MODE! ****\n");
-	printf("New back buffer video base: %08X\n", vidbase);
+	cpu->debugger->print("Gpu::makeScreen: resetting video mode - ");
+	cpu->debugger->print("new back buffer video base: %08X\n", vidbase);
 
 	backBuffers[bbNum] = SDL_CreateRGBSurfaceFrom(
 		(void*)(((Dword)cpu->mmu->videoMem)+vidbase),
@@ -198,19 +201,25 @@ void Gpu::makeScreen()
 	backBuffer = backBuffers[bbNum];
 	backBufferDCAddrs[bbNum] = vidbase;
 	currentBackBuffer = bbNum;
-	
+
 	if(screen != NULL)
 		SDL_FreeSurface(screen);
 
-	screen = SDL_SetVideoMode(width, height, bpp, SDL_HWSURFACE);
+	setHost2DVideoMode(width, height, bpp);
 
-	char caption[512];
-	sprintf(caption, "%s - %dx%d %dbpp %s", VERSION_STRING, width, height, bpp, 
-		taEnabled ? "OpenGL" : "");
-	SDL_WM_SetCaption(caption, NULL);
 	if(screen == NULL)
 		return; // we used to return an error here...but no more
 	drawFrame();
+}
+
+bool Gpu::setHost2DVideoMode(int w, int h, int bpp)
+{
+	screen = SDL_SetVideoMode(w, h, bpp, SDL_HWSURFACE);
+	char caption[512];
+	sprintf(caption, "%s - %dx%d %dbpp %s", VERSION_STRING, w, h, bpp,
+		taEnabled ? "OpenGL" : "");
+	SDL_WM_SetCaption(caption, NULL);
+	return (screen != NULL);
 }
 
 void Gpu::recvStoreQueue(Dword *sq)
@@ -258,7 +267,7 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 				withinList = true;
 			}
 			withinList = true;
-			/*printf("TA: vertex (%.2f %.2f %.2f) RGBA: %.2f %.2f %.2f %.2f\n", 
+			/*cpu->debugger->print("TA: vertex (%.2f %.2f %.2f) RGBA: %.2f %.2f %.2f %.2f\n", 
 				recvBuf[1], 
 				recvBuf[2], 
 				recvBuf[3],
@@ -272,24 +281,24 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 			glVertex3f(recvBuf[1], recvBuf[2], -1.0f * recvBuf[3]);
 			break;
 		case 0: // End of list
-	//		printf("TA: end of list\n");
+	//		cpu->debugger->print("TA: end of list\n");
 			glEnd();
 			withinList = false;
 			break;
 		case 1: // user clip
-			printf("TA: User clip is %f %f %f %f\n", 
+			cpu->debugger->print("TA: User clip is %f %f %f %f\n", 
 				recvBuf[4], 
 				recvBuf[5], 
 				recvBuf[6], 
 				recvBuf[7]);
-			//printf("hit a key");
+			//cpu->debugger->print("hit a key");
 			//getchar();
 			break;
 		case 4: // polygon / modifier volume
-		//	printf("TA: Polygon / modifier volume\n");
+		//	cpu->debugger->print("TA: Polygon / modifier volume\n");
 			break;
 		default: // hmm...
-			printf("TA: *** unimplemented TA command\n");
+			cpu->debugger->print("TA: *** unimplemented TA command\n");
 		}
 	}
 }
@@ -326,7 +335,7 @@ void Gpu::getFBSettings(Dword *w, Dword *h, Dword *vidbase, Dword *rm, Dword *gm
 		*rm = 0x1f << 11;
 		*gm = 0x3f << 5;
 		*am = 0;
-		*bpp = 16; 
+		*bpp = 16;
 		break;
 	case 3: // RGBA8888
 		*rm = 0x00ff0000;
@@ -373,11 +382,18 @@ void Gpu::setupGL()
 	{
 		taEnabled = true;
 		if(screen != NULL)
+		{
 			SDL_FreeSurface(screen);
+			screen = NULL;
+		}
 		for(int i=0; i<MAXBACKBUFFERS; i++)
 		{
-			if(this->backBuffers[i] != NULL)
+			if(backBuffers[i] != NULL)
+			{
 				SDL_FreeSurface(backBuffers[i]);
+				backBuffers[i] = NULL;
+				backBufferDCAddrs[i] = BACKBUFFERUNUSED;
+			}
 		}
 		backBuffer = NULL;
 

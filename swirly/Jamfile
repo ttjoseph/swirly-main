@@ -1,9 +1,10 @@
-# SubDir TOP swirly ;
+# Jamfile for swirly
 
 C++ = g++ ;
 C++FLAGS = -I/usr/X11R6/include ;
 CC = gcc ;
-OPTIM = -O3 ;
+OPTIM = -O3 -fomit-frame-pointer ;
+# OPTIM = -ggdb -O0 ;
 AS = nasm ;
 ASFLAGS = -f elf ;
 Main swirly :
@@ -14,7 +15,7 @@ Main swirly :
 	SHIntc.cpp  
 	SHSci.cpp  
 	Spu.cpp
-	Gdrom.cpp     
+	Gdrom.cpp
 	Maple.cpp  
 	SHBsc.cpp     
 	SHDmac.cpp  
@@ -26,6 +27,7 @@ Main swirly :
 	scramble.c
 	symtab.c
 	shfpu.s
+	shcpu.s
 	;
 LINKLIBS on swirly =
 	-lpthread
