@@ -33,8 +33,12 @@
 // used in FPU instructions
 #define FPU_DP_FIX_M() if(FPSCR & F_FPSCR_PR) m>>=1
 #define FPU_DP_FIX_N() if(FPSCR & F_FPSCR_PR) n>>=1
-#define FPU_DP_FIX_MN() if(FPSCR & F_FPSCR_PR) { m >>= 1; n>>=1; } else
+#define FPU_DP_FIX_MN() if(FPSCR & F_FPSCR_PR) { m >>= 1; n>>=1; }
 #define FPU_DP() (FPSCR & F_FPSCR_PR)
+#define FPU_SZ_FIX_M() if(FPSCR & F_FPSCR_SZ) m>>=1
+#define FPU_SZ_FIX_N() if(FPSCR & F_FPSCR_SZ) n>>=1
+#define FPU_SZ_FIX_MN() if(FPSCR & F_FPSCR_SZ) { m >>= 1; n>>=1; }
+#define FPU_SZ() (FPSCR & F_FPSCR_SZ)
 
 // Flags
 // these are named like so: F_[regname]_[flagname]
@@ -85,6 +89,11 @@ void shfpu_sFLOAT();
 void shfpu_sFMUL();
 }
 
+typedef union {
+	double d;
+	unsigned int i[2];
+} cnv_dbl;
+
 class SHCpu
 {
 public:
@@ -101,7 +110,8 @@ public:
 	SPC, DBR, SSR, SGR, *FR_Dwords;
 	// FPU regs
 	Dword FPSCR;
-	float FPR_BANK0[16], FPR_BANK1[16], *FR, *XF, FPUL;
+	Dword FPUL;
+	float FPR_BANK0[16], FPR_BANK1[16], *FR, *XF;
 	double *DR, *XD;
 
 	Byte ccnRegs[1024]; // XXX: is this the best way to do this?

@@ -74,6 +74,7 @@ public:
 
 	class SHCpu *cpu;
 	Byte *mem, *cache, *flash, *videoMem, *bootRom, *soundMem;
+	class xMMUException {};
 
 private:
   SHMmu() {}

@@ -10,6 +10,7 @@ shfpu_setContext:
 	push ebp
 	mov ebp, esp
 	
+	pusha	
 	mov eax, [ebp + 8]
 	mov ebx, [ebp + 12]
 	mov ecx, [ebp + 16]
@@ -18,6 +19,7 @@ shfpu_setContext:
 	mov [XF], ebx
 	mov [FPUL], ecx
 	mov [FPSCR], edx
+	popa
 	
 	leave
 	ret

@@ -4,6 +4,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "SHTmu.h"
+#include "SHIntc.h"
 #include <string.h>
 
 SHTmu::SHTmu(SHCpu *cpu)
@@ -15,6 +16,34 @@ SHTmu::SHTmu(SHCpu *cpu)
 SHTmu::~SHTmu()
 {
 
+}
+
+void SHTmu::updateTCNT0()
+{
+	if(TSTR & 0x1) {
+		TCNT0 = (TCNT0 & ~0x7) - 0x8;
+		if (TCNT0 == 0) {
+			if (TCR0 & 0x20) {
+				cpu->intc->internalInt(TMU0, 0x400);
+			}							
+			TCR0 |= 0x100; // turn on TCRx.UNF
+			TCNT0 = TCOR0;
+		}
+	}
+}
+
+void SHTmu::updateTCNT1()
+{
+	if(TSTR & 0x2) {
+		TCNT1 = (TCNT1 & ~0xf) - 0x10;	// Timer 1 is counting faster then Timer 0
+		if (TCNT1 == 0) {
+			if (TCR1 & 0x20) {
+				cpu->intc->internalInt(TMU1, 0x420);
+			}							
+			TCR1 |= 0x100; // turn on TCRx.UNF
+			TCNT1 = TCOR1;
+		}
+	}
 }
 
 // this function updates the TMU registers according to what
@@ -39,7 +68,7 @@ void SHTmu::update()
 // XXX: boy this looks retarded
 void SHTmu::updateTcnt(Dword *tcnt, int id, Dword starttime)
 {
-	static const int Delta = 500000; // arbitrary value
+/*	static const int Delta = 100; // arbitrary value
 	Dword tstrbit = 1 << id, *tcor;
 	Word *tcr;
 	switch(id)
@@ -52,25 +81,29 @@ void SHTmu::updateTcnt(Dword *tcnt, int id, Dword starttime)
 	if(TSTR & tstrbit)
 	{
 		Dword oldtcnt = *tcnt;
-		*tcnt = *tcor - (Delta * (currTicks - starttime));
-		if(*tcnt > oldtcnt) // check for underflow
+		Dword tmp = *tcor - (Delta * (currTicks - starttime));
+		*tcnt = oldtcnt - (Delta * (currTicks - starttime));
+//		cpu->debugger->print("SHTmu::updateTcnt: Set tcnt to %08x with start %08x currticks %08x starttime %08x tmp %08x\n", *tcnt, *tcor, currTicks, starttime, tmp);
+		if((oldtcnt - (Delta * (currTicks - starttime)))< 0) // check for underflow
 		{
 			*tcr |= 0x100; // turn on TCRx.UNF
 			*tcnt = *tcor;
+			tcnt0StartTime = currTicks;
 		}
-//		cpu->debugger->print("SHTmu::updateTcnt: Set tcnt to %08x\n", *tcnt);
+//		cpu->debugger->print("SHTmu::updateTcnt: Set tcnt to %08x with start %08x currticks %08x starttime %08x\n", *tcnt, *tcor, currTicks, starttime);
 	}
+*/
 }
 
 // call this on memory accesses
 Dword SHTmu::hook(int event, Dword addr, Dword data)
 {
-//	printf("TMU access at %08x\n", addr);
+//	printf("TMU access at %08x: %08x\n", addr, data);
 
 	Dword *realaddr = 0;
 	Byte oldTstr = TSTR;
 
-	update();
+//	update();
 
 	switch(addr & 0xff)
 	{
@@ -102,13 +135,13 @@ Dword SHTmu::hook(int event, Dword addr, Dword data)
 	case MMU_WRITE_WORD: *((Word*)realaddr) = (Word)data; break;
 	case MMU_WRITE_DWORD: *(realaddr) = data; break;
 	}
-
+/*
 #define DOTIMERTHING(a, b) if((TSTR & a) && !(oldTstr & a)) b = SDL_GetTicks()
 	DOTIMERTHING(D0, tcnt0StartTime);
 	DOTIMERTHING(D1, tcnt1StartTime);
 	DOTIMERTHING(D2, tcnt2StartTime);
 #undef DOTIMERTHING
-
+*/
 	return 0;
 }
 

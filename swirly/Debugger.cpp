@@ -178,7 +178,7 @@ void Debugger::dumpRegs()
 				Overlord::bits(fpscr, 1, 0));
 		}
 		if(i==10)
-			printf("FPUL: %.4f %08X", cpu->FPUL, *((Dword*)&cpu->FPUL));
+			printf("FPUL: %.4f %08X", *((float*)&cpu->FPUL), cpu->FPUL);
 		if(i==12)
 		{
 			//printf("MMUCR: %08X", CCNREG(MMUCR));
@@ -206,7 +206,7 @@ void Debugger::dumpRegs()
 
 // decides whether we've hit an execution breakpoint, and if so, turns on the
 // debugging prompt
-void Debugger::checkExecBp()
+inline void Debugger::checkExecBp()
 {
 	if(execBpSet == false)
 		return;
@@ -229,6 +229,7 @@ bool Debugger::prompt()
 	char userInput[512];
 	Word d;
 
+	if(execBpSet != false)
 	checkExecBp();
 
 	if(promptOn)
@@ -586,8 +587,8 @@ bool Debugger::cmdFr(char *cmd)
 // dump double-prec floating point regs explicitly
 bool Debugger::cmdFrd(char *cmd)
 {
-	for(int i=0; i<16;i+=4)
-		printf("DR%02d: %f  DR%02d: %f\n", i, cpu->DR[i], i+2, cpu->DR[i+2]);
+	for(int i=0; i<8;i+=2)
+		printf("DR%02d: %f  DR%02d: %f\n", i, cpu->DR[i], i+1, cpu->DR[i+1]);
 	return false;
 }
 

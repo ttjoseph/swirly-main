@@ -1,3 +1,4 @@
+#include <string.h>
 #include "Gpu.h"
 #include "Overlord.h"
 
@@ -36,11 +37,12 @@ void Gpu::recvStoreQueue(Dword *sq)
 void Gpu::handleTaWrite(Dword addr, Dword data)
 {
 	Dword *recvBufDwords = (Dword*)recvBuf;
+	float *recvFloat = (float*)recvBuf;
 	recvBufDwords[dwordsReceived] = data;
 	dwordsReceived++;
 	bool withinList = false;
 
-	cpu->debugger->print("Gpu::handleTaWrite: received a write to the TA, addr: %08x, data %08x", addr, data);
+	cpu->debugger->print("Gpu::handleTaWrite: received a write to the TA, addr: %08x, data %08x\n", addr, data);
 	if(dwordsReceived == 1)
 	{
 		// see which command this is and decide how many dwords we need to receive
@@ -65,17 +67,17 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 			}
 			withinList = true;
 			cpu->debugger->print("TA: vertex (%.2f %.2f %.2f) RGBA: %.2f %.2f %.2f %.2f\n",
-				recvBuf[1],
-				recvBuf[2],
-				recvBuf[3],
-				recvBuf[5],
-				recvBuf[6],
-				recvBuf[7],
-				recvBuf[4]
+				recvFloat[1],
+				recvFloat[2],
+				recvFloat[3],
+				recvFloat[5],
+				recvFloat[6],
+				recvFloat[7],
+				recvFloat[4]
 				);
 
-			glColor4f(recvBuf[5], recvBuf[6], recvBuf[7], recvBuf[4]);
-			glVertex3f(recvBuf[1], recvBuf[2], -1.0f * recvBuf[3]);
+			glColor4f(recvFloat[5], recvFloat[6], recvFloat[7], recvFloat[4]);
+			glVertex3f(recvFloat[1], recvFloat[2], -1.0f * recvFloat[3]);
 			break;
 		case 0: // End of list
 			cpu->debugger->print("TA: end of list\n");

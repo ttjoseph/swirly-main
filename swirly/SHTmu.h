@@ -20,6 +20,9 @@ public:
 
 	class SHCpu *cpu;
 
+	void updateTCNT0();
+	void updateTCNT1();
+
 private:
 	SHTmu() {}
 	void update();

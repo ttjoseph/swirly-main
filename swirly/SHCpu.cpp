@@ -151,17 +151,13 @@ void SHCpu:: TSTM(Byte i)
 
 void SHCpu:: TRAPA(Byte i)
 {
-	debugger->promptOn = true;
-	PC+=2;
-	/* TODO: this gets uncommented when we do exceptions
+    /* TODO: this gets uncommented when we do exceptions*/
 	SSR=SR;
 	SPC=PC+2;
-	SGR=R[15];
 	setSR(SR|F_SR_MD|F_SR_BL|F_SR_RB);
 	mmu->writeDword(0xff000000|TRA, (i&0xff)<<2);
 	mmu->writeDword(0xff000000|EXPEVT, 0x160);
 	PC=VBR+0x100;
-	*/
 }
 
 void SHCpu:: TAS(int n)
@@ -271,7 +267,7 @@ void SHCpu::STSFPSCR(int n)
 
 void SHCpu::STSFPUL(int n)
 {
-	R[n] = *((Dword*) &FPUL);
+	R[n] = FPUL;
 	PC+=2;
 }
 
@@ -285,7 +281,7 @@ void SHCpu::STSMFPSCR(int n)
 void SHCpu:: STSMFPUL(int n)
 {
 	R[n]-=4;
-	mmu->writeFloat(R[n], FPUL);
+	mmu->writeDword(R[n], FPUL);
 	PC+=2;
 }
 
@@ -1063,13 +1059,13 @@ void SHCpu::LDSMFPSCR(int n)
 
 void SHCpu::LDSFPUL(int n)
 {
-	FPUL = *((float*)(R+n));
+	FPUL = R[n];
 	PC+=2;	
 }
 
 void SHCpu::LDSMFPUL(int n)
 {
-	FPUL = mmu->readFloat(R[n]);
+	FPUL = mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
@@ -1709,7 +1705,6 @@ void SHCpu::FABS(int n)
 {
 	FPU_DP_FIX_N();
 
-	
 	if(FPU_DP()) // double-precision
 		DR[n] = fabs(DR[n]);
 		//*(((Qword*)DR)+n) &= 0x7fffffffffffffff;
@@ -1721,29 +1716,50 @@ void SHCpu::FABS(int n)
 
 void SHCpu::FADD(int m, int n)
 {
-	FPU_DP_FIX_MN();
-
+//	FPU_DP_FIX_MN();
 	
 	if(FPU_DP()) // double-precision
-		DR[n]+=DR[m];
-	else // single-precision
+	{
+		cnv_dbl tmpa, tmpb;
+		tmpa.i[1] = FR_Dwords[n];
+		tmpa.i[0] = FR_Dwords[n+1];
+		tmpb.i[1] = FR_Dwords[m];
+		tmpb.i[0] = FR_Dwords[m+1];
+		printf("FADD: %f * %f = ", tmpa.d, tmpb.d);
+		tmpa.d += tmpb.d;
+		printf("%f\n", tmpa.d);
+		FR_Dwords[n] = tmpa.i[1];
+		FR_Dwords[n+1] = tmpa.i[0];
+//		DR[n]+=DR[m];
+	} else // single-precision
 		FR[n]+=FR[m];
 	PC+=2;
 }
 
 void SHCpu::FMUL(int m, int n)
 {
-	FPU_DP_FIX_MN();
-
+//	FPU_DP_FIX_MN();
 	
 	if(FPU_DP()) // double-precision
-		DR[n]*=DR[m];
+	{
+		cnv_dbl tmpa, tmpb;
+		tmpa.i[1] = FR_Dwords[n];
+		tmpa.i[0] = FR_Dwords[n+1];
+		tmpb.i[1] = FR_Dwords[m];
+		tmpb.i[0] = FR_Dwords[m+1];
+		printf("FMUL: %f * %f = ", tmpa.d, tmpb.d);
+		tmpa.d *= tmpb.d;
+		printf("%f\n", tmpa.d);
+		FR_Dwords[n] = tmpa.i[1];
+		FR_Dwords[n+1] = tmpa.i[0];
+//		DR[n]*=DR[m];
+	}
 	else // single-precision
 	{
-		shfpu_sop0 = FR[n];
-		shfpu_sop1 = FR[m];
-//		FR[n]*=FR[m];
-		shfpu_sFMUL();
+//		shfpu_sop0 = FR[n];
+//		shfpu_sop1 = FR[m];
+		FR[n]*=FR[m];
+//		shfpu_sFMUL();
 		FR[n] = shfpu_sresult;
 	}
 	PC+=2;
@@ -1773,14 +1789,14 @@ void SHCpu::setFPSCR(Dword d)
 	}
 
 	FR_Dwords = (Dword*)FR;
-	shfpu_setContext(FR, XF, &FPUL, &FPSCR);
+//	shfpu_setContext(FR, XF, (float*)&FPUL, &FPSCR);
 }
 
 void SHCpu::FMOV(int m, int n)
 {
-	FPU_DP_FIX_MN();
+	FPU_SZ_FIX_MN();
 
-	if(FPU_DP())
+	if(FPU_SZ())
 		DR[n]=DR[m];
 	else
 		FR_Dwords[n] = FR_Dwords[m];
@@ -1790,9 +1806,9 @@ void SHCpu::FMOV(int m, int n)
 
 void SHCpu::FMOV_STORE(int m, int n)
 {
-	FPU_DP_FIX_MN();
+	FPU_SZ_FIX_M();
 
-	if(FPU_DP()) // double-precision
+	if(FPU_SZ()) // double-precision
 		mmu->writeDouble(R[n], DR[m]);
 	else // single-precision
 		mmu->writeFloat(R[n], FR[m]);
@@ -1801,9 +1817,9 @@ void SHCpu::FMOV_STORE(int m, int n)
 
 void SHCpu::FMOV_LOAD(int m, int n)
 {
-	FPU_DP_FIX_N();
+	FPU_SZ_FIX_N();
 
-	if(FPU_DP()) // double-precision
+	if(FPU_SZ()) // double-precision
 		DR[n] = mmu->readDouble(R[m]);
 	else // single-precision
 		FR[n] = mmu->readFloat(R[m]);
@@ -1812,8 +1828,8 @@ void SHCpu::FMOV_LOAD(int m, int n)
 
 void SHCpu::FMOV_RESTORE(int m, int n)
 {
-	FPU_DP_FIX_N();
-	if(FPU_DP()) // double-precision
+	FPU_SZ_FIX_N();
+	if(FPU_SZ()) // double-precision
 	{
 		DR[n] = mmu->readDouble(R[m]);
 		R[m]+=8;
@@ -1828,9 +1844,9 @@ void SHCpu::FMOV_RESTORE(int m, int n)
 
 void SHCpu::FMOV_SAVE(int m, int n)
 {
-	FPU_DP_FIX_M();
+	FPU_SZ_FIX_M();
 
-	if(FPU_DP()) // double-precision
+	if(FPU_SZ()) // double-precision
 	{
 		R[n]-=8;
 		mmu->writeDouble(R[n], DR[m]);
@@ -1845,9 +1861,9 @@ void SHCpu::FMOV_SAVE(int m, int n)
 
 void SHCpu::FMOV_INDEX_LOAD(int m, int n)
 {
-	FPU_DP_FIX_N();
+	FPU_SZ_FIX_N();
 
-	if(FPU_DP()) // double-precision
+	if(FPU_SZ()) // double-precision
 		DR[n] = mmu->readDouble(R[m]+R[0]);
 	else // single-precision
 		FR[n] = mmu->readFloat(R[m]+R[0]);
@@ -1856,9 +1872,9 @@ void SHCpu::FMOV_INDEX_LOAD(int m, int n)
 
 void SHCpu::FMOV_INDEX_STORE(int m, int n)
 {
-	FPU_DP_FIX_M();
+	FPU_SZ_FIX_M();
 	
-	if(FPU_DP()) // double-precision
+	if(FPU_SZ()) // double-precision
 		mmu->writeDouble(R[0]+R[n], DR[m]);
 	else // single-precision
 		mmu->writeFloat(R[0]+R[n], FR[m]);
@@ -1910,10 +1926,22 @@ void SHCpu::FCNVSD(int n)
 
 void SHCpu::FDIV(int m, int n)
 {
-	FPU_DP_FIX_MN()
+//	FPU_DP_FIX_MN();
 
 	if(FPSCR & F_FPSCR_PR)
-		DR[n] /= DR[m>>1];
+	{
+		cnv_dbl tmpa, tmpb;
+		tmpa.i[1] = FR_Dwords[n];
+		tmpa.i[0] = FR_Dwords[n+1];
+		tmpb.i[1] = FR_Dwords[m];
+		tmpb.i[0] = FR_Dwords[m+1];
+		printf("FDIV: %f / %f = ", tmpa.d, tmpb.d);
+		tmpa.d /= tmpb.d;
+		printf("%f\n", tmpa.d);
+		FR_Dwords[n] = tmpa.i[1];
+		FR_Dwords[n+1] = tmpa.i[0];
+//		DR[n] /= DR[m];
+	}
 	else
 		FR[n] /= FR[m];
 	PC+=2;
@@ -1934,20 +1962,26 @@ void SHCpu::FLDI1(int n)
 
 void SHCpu::FLDS(int n)
 {
-	FPUL = FR[n];
+	FPUL = FR_Dwords[n];
 	PC+=2;
 }
 
-
 void SHCpu::FLOAT(int n)
 {
-	FPU_DP_FIX_N();
-	if(FPU_DP())
-		DR[n] = (double)*((float*)(signed int*)&FPUL);
+//	FPU_DP_FIX_N();
+	if(FPU_DP()) {
+		cnv_dbl tmpa;
+		tmpa.d = (double)*((signed int*)&FPUL);
+		FR_Dwords[n] = tmpa.i[1];
+		FR_Dwords[n+1] = tmpa.i[0];
+//		DR[n] = (double)*((float*)(signed int*)&FPUL);
+//		DR[n] = (double)*((signed int*)&FPUL);
+	}
 	else
 	{
-		shfpu_sFLOAT();
-		FR[n] = shfpu_sresult;
+//		shfpu_sFLOAT();
+//		FR[n] = shfpu_sresult;
+		FR[n] = (float)*((signed int*)&FPUL);
 	}
 	PC+=2;
 }
@@ -2076,7 +2110,7 @@ void SHCpu::FSQRT(int n)
 
 void SHCpu::FSTS(int n)
 {
-	FR[n] = FPUL;
+	FR_Dwords[n] = FPUL;
 	PC+=2;
 }
 
@@ -2094,12 +2128,18 @@ void SHCpu::FSUB(int m, int n)
 void SHCpu::FTRC(int n)
 {
 	FPU_DP_FIX_N();
-	if(FPU_DP())
-		FPUL = (float) DR[n];
-	else
-		FPUL = FR[n];
+	if(FPU_DP()) {
+		cnv_dbl tmpa;
+		tmpa.i[1] = *((unsigned int*)&FR[n<<1]);
+		tmpa.i[0] = *((unsigned int*)&FR[(n<<1) + 1]);
+		FPUL = (Dword)((float)tmpa.d);
+//		FPUL = (float) DR[n];
+	}
+	else {
+		FPUL = (Dword)FR[n];
+//		FPUL = FR[n];
+	}
 	PC+=2;
-
 }
 
 void SHCpu::FSCA(int n)
@@ -2234,6 +2274,160 @@ void SHCpu::executeInstruction(Word d)
 {
 	switch(d & 0xF000)
 	{
+	case 0x6000:
+		switch(d & 0xF00F)
+		{
+			case 0x6000: MOVBL(getM(d), getN(d)); return;
+			case 0x6001: MOVWL(getM(d), getN(d)); return;
+			case 0x6002: MOVLL(getM(d), getN(d)); return;
+			case 0x6003: MOV(getM(d), getN(d)); return;
+			case 0x6004: MOVBP(getM(d), getN(d)); return;
+			case 0x6005: MOVWP(getM(d), getN(d)); return;
+			case 0x6006: MOVLP(getM(d), getN(d)); return;
+			case 0x6007: NOT(getM(d), getN(d)); return;
+			case 0x6008: SWAPB(getM(d), getN(d)); return;
+			case 0x6009: SWAPW(getM(d), getN(d)); return;
+			case 0x600a: NEGC(getM(d), getN(d)); return;
+			case 0x600b: NEG(getM(d), getN(d)); return;
+			case 0x600c: EXTUB(getM(d), getN(d)); return;
+			case 0x600d: EXTUW(getM(d), getN(d)); return;
+			case 0x600e: EXTSB(getM(d), getN(d)); return;
+			case 0x600f: EXTSW(getM(d), getN(d)); return;
+		} break;
+
+	case 0x2000: 
+		switch(d & 0xF00F)
+		{
+			case 0x2000: MOVBS(getM(d), getN(d)); return;
+			case 0x2001: MOVWS(getM(d), getN(d)); return;
+			case 0x2002: MOVLS(getM(d), getN(d)); return;
+			case 0x2004: MOVBM(getM(d), getN(d)); return;
+			case 0x2005: MOVWM(getM(d), getN(d)); return;
+			case 0x2006: MOVLM(getM(d), getN(d)); return;
+			case 0x2007: DIV0S(getM(d), getN(d)); return;
+			case 0x2008: TST(getM(d), getN(d)); return;
+			case 0x2009: AND(getM(d), getN(d)); return;
+			case 0x200a: XOR(getM(d), getN(d)); return;
+			case 0x200b: OR(getM(d), getN(d)); return;
+			case 0x200c: CMPSTR(getM(d), getN(d)); return;
+			case 0x200d: XTRCT(getM(d), getN(d)); return;
+			case 0x200e: MULU(getM(d), getN(d)); return;
+			case 0x200f: MULS(getM(d), getN(d)); return;
+		} break;
+
+	case 0x3000: 
+		switch(d & 0xF00F)
+		{
+			case 0x3000: CMPEQ(getM(d), getN(d)); return;
+			case 0x3002: CMPHS(getM(d), getN(d)); return;
+			case 0x3003: CMPGE(getM(d), getN(d)); return;
+			case 0x3004: DIV1(getM(d), getN(d)); return;
+			case 0x3005: DMULU(getM(d), getN(d)); return;
+			case 0x3006: CMPHI(getM(d), getN(d)); return;
+			case 0x3007: CMPGT(getM(d), getN(d)); return;
+			case 0x3008: SUB(getM(d), getN(d)); return;
+			case 0x300a: SUBC(getM(d), getN(d)); return;
+			case 0x300b: SUBV(getM(d), getN(d)); return;
+			case 0x300c: ADD(getM(d), getN(d)); return;
+			case 0x300d: DMULS(getM(d), getN(d)); return;
+			case 0x300e: ADDC(getM(d), getN(d)); return;
+			case 0x300f: ADDV(getM(d), getN(d)); return;
+		} break;
+
+	case 0x8000: 
+		switch(d & 0xFF00)
+		{
+		case 0x8000: MOVBS4(getI(d), getM(d)); return;
+		case 0x8100: MOVWS4(getI(d), getM(d)); return;
+		case 0x8400: MOVBL4(getM(d), getI(d)); return;
+		case 0x8500: MOVWL4(getM(d), getI(d)); return;
+		case 0x8800: CMPIM(getI(d)); return;
+		case 0x8900: BT(getI(d)); return;
+		case 0x8b00: BF(getI(d)); return;
+		case 0x8d00: BTS(getI(d)); return;
+		case 0x8f00: BFS(getI(d)); return;
+		} break;
+
+	case 0xc000: 
+		switch(d & 0xFF00)
+		{
+		case 0xc000: MOVBSG(getI(d)); return;
+		case 0xc100: MOVWSG(getI(d)); return;
+		case 0xc200: MOVLSG(getI(d)); return;
+		case 0xc300: TRAPA(getI(d)); return;
+		case 0xc400: MOVBLG(getI(d)); return;
+		case 0xc500: MOVWLG(getI(d)); return;
+		case 0xc600: MOVLLG(getI(d)); return;
+		case 0xc700: MOVA(getI(d)); return;
+		case 0xc800: TSTI(getI(d)); return;
+		case 0xc900: ANDI(getI(d)); return;
+		case 0xca00: XORI(getI(d)); return;
+		case 0xcb00: ORI(getI(d)); return;
+		case 0xcc00: TSTM(getI(d)); return;
+		case 0xcd00: ANDM(getI(d)); return;
+		case 0xce00: XORM(getI(d)); return;
+		case 0xcf00: ORM(getI(d)); return;
+		} break;
+
+	case 0x4000: 
+		switch(d & 0xF0FF)
+		{
+		case 0x4000: SHLL(getN(d)); return;
+		case 0x4010: DT(getN(d)); return;
+		case 0x4020: SHAL(getN(d)); return;
+		case 0x4001: SHLR(getN(d)); return;
+		case 0x4011: CMPPZ(getN(d)); return;
+		case 0x4021: SHAR(getN(d)); return;
+		case 0x4002: STSMMACH(getN(d)); return;
+		case 0x4012: STSMMACL(getN(d)); return;
+		case 0x4022: STSMPR(getN(d)); return;
+		case 0x4032: STCMSGR(getN(d)); return;
+		case 0x4052: STSMFPUL(getN(d)); return;
+		case 0x4062: STSMFPSCR(getN(d)); return;
+		case 0x40f2: STCMDBR(getN(d)); return;
+		case 0x4003: STCMSR(getN(d)); return;
+		case 0x4013: STCMGBR(getN(d)); return;
+		case 0x4023: STCMVBR(getN(d)); return;
+		case 0x4033: STCMSSR(getN(d)); return;
+		case 0x4043: STCMSPC(getN(d)); return;
+		case 0x4004: ROTL(getN(d)); return;
+		case 0x4024: ROTCL(getN(d)); return;
+		case 0x4005: ROTR(getN(d)); return;
+		case 0x4015: CMPPL(getN(d)); return;
+		case 0x4025: ROTCR(getN(d)); return;
+		case 0x4056: LDSMFPUL(getN(d)); return;
+		case 0x4066: LDSMFPSCR(getN(d)); return;
+		case 0x4006: LDSMMACH(getN(d)); return;
+		case 0x4016: LDSMMACL(getN(d)); return;
+		case 0x4026: LDSMPR(getN(d)); return;
+		case 0x40f6: LDCMDBR(getN(d)); return;
+		case 0x4007: LDCMSR(getN(d)); return;
+		case 0x4017: LDCMGBR(getN(d)); return;
+		case 0x4027: LDCMVBR(getN(d)); return;
+		case 0x4037: LDCMSSR(getN(d)); return;
+		case 0x4047: LDCMSPC(getN(d)); return;
+		case 0x4008: SHLL2(getN(d)); return;
+		case 0x4018: SHLL8(getN(d)); return;
+		case 0x4028: SHLL16(getN(d)); return;
+		case 0x4009: SHLR2(getN(d)); return;
+		case 0x4019: SHLR8(getN(d)); return;
+		case 0x4029: SHLR16(getN(d)); return;
+		case 0x400a: LDSMACH(getN(d)); return;
+		case 0x401a: LDSMACL(getN(d)); return;
+		case 0x402a: LDSPR(getN(d)); return;
+		case 0x406a: LDSFPSCR(getN(d)); return;
+		case 0x405a: LDSFPUL(getN(d)); return;
+		case 0x40fa: LDCDBR(getN(d)); return;
+		case 0x400b: JSR(getN(d)); return;
+		case 0x401b: TAS(getN(d)); return;
+		case 0x402b: JMP(getN(d)); return;
+		case 0x400e: LDCSR(getN(d)); return;
+		case 0x401e: LDCGBR(getN(d)); return;
+		case 0x402e: LDCVBR(getN(d)); return;
+		case 0x403e: LDCSSR(getN(d)); return;
+		case 0x404e: LDCSPC(getN(d)); return;
+		} break;
+		
 	case 0x7000: ADDI(getI(d), getN(d)); return;
 	case 0xa000: BRA((Sword)((Word) d & 0xfff)); return;
 	case 0xb000: BSR((Sword)((Word) d & 0xfff)); return;
@@ -2263,7 +2457,7 @@ void SHCpu::executeInstruction(Word d)
 	case 0x000b: RTS(); return;
 	case 0x0058: SETS(); return;
 	case 0x0018: SETT(); return;
-	case 0x0038: mmu->ldtlb(); return;
+	case 0x0038: mmu->ldtlb(); PC+=2; return;
 	case 0x001b: SLEEP(); return;
 	case 0xfffd: dispatchSwirlyHook(); return;
 	}
@@ -2271,53 +2465,21 @@ void SHCpu::executeInstruction(Word d)
 	switch(d & 0xF00F)
 	{
 	case 0xf000: FADD(getM(d), getN(d)); return;
+	case 0xf001: FSUB(getM(d), getN(d)); return;
 	case 0xf002: FMUL(getM(d), getN(d)); return;
-	case 0xf00c: FMOV(getM(d), getN(d)); return;
-	case 0xf00a: FMOV_STORE(getM(d), getN(d)); return;
-	case 0xf008: FMOV_LOAD(getM(d), getN(d)); return;
-	case 0xf009: FMOV_RESTORE(getM(d), getN(d)); return;
-	case 0xf00b: FMOV_SAVE(getM(d), getN(d)); return;
-	case 0xf006: FMOV_INDEX_LOAD(getM(d), getN(d)); return;
-	case 0xf007: FMOV_INDEX_STORE(getM(d), getN(d)); return;
+	case 0xf003: FDIV(getM(d), getN(d)); return;
 	case 0xf004: FCMPEQ(getM(d), getN(d)); return;
 	case 0xf005: FCMPGT(getM(d), getN(d)); return;
-	case 0xf003: FDIV(getM(d), getN(d)); return;
+	case 0xf006: FMOV_INDEX_LOAD(getM(d), getN(d)); return;
+	case 0xf007: FMOV_INDEX_STORE(getM(d), getN(d)); return;
+	case 0xf008: FMOV_LOAD(getM(d), getN(d)); return;
+	case 0xf009: FMOV_RESTORE(getM(d), getN(d)); return;
+	case 0xf00a: FMOV_STORE(getM(d), getN(d)); return;
+	case 0xf00b: FMOV_SAVE(getM(d), getN(d)); return;
+	case 0xf00c: FMOV(getM(d), getN(d)); return;
 	case 0xf00e: FMAC(getM(d), getN(d)); return;
-	case 0xf001: FSUB(getM(d), getN(d)); return;
 
-	case 0x300c: ADD(getM(d), getN(d)); return;
-	case 0x300e: ADDC(getM(d), getN(d)); return;
-	case 0x300f: ADDV(getM(d), getN(d)); return;
-	case 0x2009: AND(getM(d), getN(d)); return;
-	case 0x3000: CMPEQ(getM(d), getN(d)); return;
-	case 0x3003: CMPGE(getM(d), getN(d)); return;
-	case 0x3007: CMPGT(getM(d), getN(d)); return;
-	case 0x3006: CMPHI(getM(d), getN(d)); return;
-	case 0x3002: CMPHS(getM(d), getN(d)); return;
-	case 0x200c: CMPSTR(getM(d), getN(d)); return;
-	case 0x2007: DIV0S(getM(d), getN(d)); return;
-	case 0x3004: DIV1(getM(d), getN(d)); return;
-	case 0x300d: DMULS(getM(d), getN(d)); return;
-	case 0x3005: DMULU(getM(d), getN(d)); return;
-	case 0x600e: EXTSB(getM(d), getN(d)); return;
-	case 0x600f: EXTSW(getM(d), getN(d)); return;
-	case 0x600c: EXTUB(getM(d), getN(d)); return;
-	case 0x600d: EXTUW(getM(d), getN(d)); return;
 	case 0x000f: DO_MACL(getM(d), getN(d)); return;
-	case 0x400f: MACW(getM(d), getN(d)); return;
-	case 0x6003: MOV(getM(d), getN(d)); return;
-	case 0x2000: MOVBS(getM(d), getN(d)); return;
-	case 0x2001: MOVWS(getM(d), getN(d)); return;
-	case 0x2002: MOVLS(getM(d), getN(d)); return;
-	case 0x6000: MOVBL(getM(d), getN(d)); return;
-	case 0x6001: MOVWL(getM(d), getN(d)); return;
-	case 0x6002: MOVLL(getM(d), getN(d)); return;
-	case 0x2004: MOVBM(getM(d), getN(d)); return;
-	case 0x2005: MOVWM(getM(d), getN(d)); return;
-	case 0x2006: MOVLM(getM(d), getN(d)); return;
-	case 0x6004: MOVBP(getM(d), getN(d)); return;
-	case 0x6005: MOVWP(getM(d), getN(d)); return;
-	case 0x6006: MOVLP(getM(d), getN(d)); return;
 	case 0x0004: MOVBS0(getM(d), getN(d)); return;
 	case 0x0005: MOVWS0(getM(d), getN(d)); return;
 	case 0x0006: MOVLS0(getM(d), getN(d)); return;
@@ -2325,105 +2487,22 @@ void SHCpu::executeInstruction(Word d)
 	case 0x000d: MOVWL0(getM(d), getN(d)); return;
 	case 0x000e: MOVLL0(getM(d), getN(d)); return;
 	case 0x0007: MULL(getM(d), getN(d)); return;
-	case 0x200f: MULS(getM(d), getN(d)); return;
-	case 0x200e: MULU(getM(d), getN(d)); return;
-	case 0x600a: NEGC(getM(d), getN(d)); return;
-	case 0x600b: NEG(getM(d), getN(d)); return;
-	case 0x6007: NOT(getM(d), getN(d)); return;
-	case 0x200b: OR(getM(d), getN(d)); return;
+
+	case 0x400f: MACW(getM(d), getN(d)); return;
 	case 0x400c: SHAD(getM(d), getN(d)); return;
 	case 0x400d: SHLD(getM(d), getN(d)); return;
-	case 0x3008: SUB(getM(d), getN(d)); return;
-	case 0x300a: SUBC(getM(d), getN(d)); return;
-	case 0x300b: SUBV(getM(d), getN(d)); return;
-	case 0x6008: SWAPB(getM(d), getN(d)); return;
-	case 0x6009: SWAPW(getM(d), getN(d)); return;
-	case 0x2008: TST(getM(d), getN(d)); return;
-	case 0x200a: XOR(getM(d), getN(d)); return;
-	case 0x200d: XTRCT(getM(d), getN(d)); return;
-	}
-
-	switch(d & 0xFF00)
-	{
-	case 0x8000: MOVBS4(getI(d), getM(d)); return;
-	case 0x8100: MOVWS4(getI(d), getM(d)); return;
-	case 0x8400: MOVBL4(getM(d), getI(d)); return;
-	case 0x8500: MOVWL4(getM(d), getI(d)); return;
-	case 0xc900: ANDI(getI(d)); return;
-	case 0xcd00: ANDM(getI(d)); return;
-	case 0x8b00: BF(getI(d)); return;
-	case 0x8f00: BFS(getI(d)); return;
-	case 0x8900: BT(getI(d)); return;
-	case 0x8d00: BTS(getI(d)); return;
-	case 0x8800: CMPIM(getI(d)); return;
-	case 0xc400: MOVBLG(getI(d)); return;
-	case 0xc500: MOVWLG(getI(d)); return;
-	case 0xc600: MOVLLG(getI(d)); return;
-	case 0xc000: MOVBSG(getI(d)); return;
-	case 0xc100: MOVWSG(getI(d)); return;
-	case 0xc200: MOVLSG(getI(d)); return;
-	case 0xc700: MOVA(getI(d)); return;
-	case 0xcb00: ORI(getI(d)); return;
-	case 0xcf00: ORM(getI(d)); return;
-	case 0xc300: TRAPA(getI(d)); return;
-	case 0xc800: TSTI(getI(d)); return;
-	case 0xcc00: TSTM(getI(d)); return;
-	case 0xca00: XORI(getI(d)); return;
-	case 0xce00: XORM(getI(d)); return;
-
 	}
 
 	switch(d & 0xF0FF)
 	{
 	case 0x0023: BRAF(getN(d)); return;
 	case 0x0003: BSRF(getN(d)); return;
-	case 0x4015: CMPPL(getN(d)); return;
-	case 0x4011: CMPPZ(getN(d)); return;
-	case 0x4010: DT(getN(d)); return;
-	case 0x400b: JSR(getN(d)); return;
-	case 0x402b: JMP(getN(d)); return;
-	case 0x400e: LDCSR(getN(d)); return;
-	case 0x401e: LDCGBR(getN(d)); return;
-	case 0x402e: LDCVBR(getN(d)); return;
-	case 0x403e: LDCSSR(getN(d)); return;
-	case 0x404e: LDCSPC(getN(d)); return;
-	case 0x40fa: LDCDBR(getN(d)); return;
-	case 0x4007: LDCMSR(getN(d)); return;
-	case 0x4017: LDCMGBR(getN(d)); return;
-	case 0x4027: LDCMVBR(getN(d)); return;
-	case 0x4037: LDCMSSR(getN(d)); return;
-	case 0x4047: LDCMSPC(getN(d)); return;
-	case 0x40f6: LDCMDBR(getN(d)); return;
-	case 0x400a: LDSMACH(getN(d)); return;
-	case 0x401a: LDSMACL(getN(d)); return;
-	case 0x402a: LDSPR(getN(d)); return;
-	case 0x406a: LDSFPSCR(getN(d)); return;
-	case 0x405a: LDSFPUL(getN(d)); return;
-	case 0x4056: LDSMFPUL(getN(d)); return;
-	case 0x4066: LDSMFPSCR(getN(d)); return;
-	case 0x4006: LDSMMACH(getN(d)); return;
-	case 0x4016: LDSMMACL(getN(d)); return;
-	case 0x4026: LDSMPR(getN(d)); return;
 	case 0x00c3: MOVCAL(getN(d)); return;
 	case 0x0029: MOVT(getN(d)); return;
 	case 0x0093: OCBI(getN(d)); return;
 	case 0x00a3: OCBP(getN(d)); return;
 	case 0x00b3: OCBWB(getN(d)); return;
 	case 0x0083: PREF(getN(d)); return;
-	case 0x4024: ROTCL(getN(d)); return;
-	case 0x4025: ROTCR(getN(d)); return;
-	case 0x4004: ROTL(getN(d)); return;
-	case 0x4005: ROTR(getN(d)); return;
-	case 0x4020: SHAL(getN(d)); return;
-	case 0x4021: SHAR(getN(d)); return;
-	case 0x4000: SHLL(getN(d)); return;
-	case 0x4008: SHLL2(getN(d)); return;
-	case 0x4018: SHLL8(getN(d)); return;
-	case 0x4028: SHLL16(getN(d)); return;
-	case 0x4001: SHLR(getN(d)); return;
-	case 0x4009: SHLR2(getN(d)); return;
-	case 0x4019: SHLR8(getN(d)); return;
-	case 0x4029: SHLR16(getN(d)); return;
 	case 0x0002: STCSR(getN(d)); return;
 	case 0x0012: STCGBR(getN(d)); return;
 	case 0x0022: STCVBR(getN(d)); return;
@@ -2431,34 +2510,23 @@ void SHCpu::executeInstruction(Word d)
 	case 0x0042: STCSPC(getN(d)); return;
 	case 0x003a: STCSGR(getN(d)); return;
 	case 0x00fa: STCDBR(getN(d)); return;
-	case 0x4003: STCMSR(getN(d)); return;
-	case 0x4013: STCMGBR(getN(d)); return;
-	case 0x4023: STCMVBR(getN(d)); return;
-	case 0x4033: STCMSSR(getN(d)); return;
-	case 0x4043: STCMSPC(getN(d)); return;
-	case 0x4032: STCMSGR(getN(d)); return;
-	case 0x40f2: STCMDBR(getN(d)); return;
 	case 0x000a: STSMACH(getN(d)); return;
 	case 0x001a: STSMACL(getN(d)); return;
 	case 0x002a: STSPR(getN(d)); return;
 	case 0x0062: STSFPSCR(getN(d)); return;
 	case 0x005a: STSFPUL(getN(d)); return;
-	case 0x4002: STSMMACH(getN(d)); return;
-	case 0x4012: STSMMACL(getN(d)); return;
-	case 0x4022: STSMPR(getN(d)); return;
-	case 0x4062: STSMFPSCR(getN(d)); return;
-	case 0x4052: STSMFPUL(getN(d)); return;
-	case 0x401b: TAS(getN(d)); return;
 
+	case 0xf00d: FSTS(getN(d)); return;
+	case 0xf01d: FLDS(getN(d)); return;
+	case 0xf02d: FLOAT(getN(d)); return;
+	case 0xf03d: FTRC(getN(d)); return;
+	case 0xf04d: FNEG(getN(d)); return;
+	case 0xf07d: FSRRA(getN(d)); return;
 	case 0xf08d: FLDI0(getN(d)); return;
 	case 0xf09d: FLDI1(getN(d)); return;
-	case 0xf02d: FLOAT(getN(d)); return;
-	case 0xf04d: FNEG(getN(d)); return;
-	case 0xf0bd: FCNVDS(getN(d)); return;
 	case 0xf0ad: FCNVSD(getN(d)); return;
-	case 0xf03d: FTRC(getN(d)); return;
+	case 0xf0bd: FCNVDS(getN(d)); return;
 	case 0xf0fd: FSCA(getN(d)); return;
-	case 0xf07d: FSRRA(getN(d)); return;
 	}
 
 	// Uh-oh; we can't figure out this instruction
@@ -2475,17 +2543,26 @@ void SHCpu::go()
 	{
 		if(debugger->prompt())
 		{
+//			try {
 			d = mmu->fetchInstruction(PC);
 			executeInstruction(d);
+//			} catch (...) { // SHMmu::xMMUException
+//				printf("Exception caught\n");
+//			}
 			numIterations++;
-			if((numIterations % 700000) == 0)
+			if((numIterations & 0x7) == 0x0)
+			{
+				tmu->updateTCNT0();
+				tmu->updateTCNT1();
+			}	
+			if((numIterations & 0x7ffff) == 0x7ffff)
 			{
 				// make SDL handle events
 				overlord->handleEvents();
 				gpu->drawFrame();
 			}
 		}
-	}
+	} // for
 }
 
 void SHCpu::exception(Dword type, Dword addr, Dword data, char *datadesc)

@@ -10,6 +10,8 @@
 
 #include "swirly.h"
 
+#define TWENTY_YEARS ((20 * 365LU + 5) * 86400)
+
 class Spu  
 {
 public:

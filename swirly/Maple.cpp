@@ -34,8 +34,8 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 		case 0xa05f6900: // TA's VBL reg
 			return 0x88; // hack
 
-		case 0xa05f688c: // XXX: some SPU-related reg?
-			return 1; // hack
+		case 0xa05f688c: // XXX: g2_fifo
+			return 1; // hack, return 0 for kallistios
 
 		case 0xa05f6c18: // Maple DMA
 			cpu->debugger->print("Maple: check DMA status, PC=%08X\n", cpu->PC);
@@ -123,7 +123,7 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 							fh.command = MAPLE_DATA_TRANSFER_RESP;
 							fh.recipient = sender;
 							fh.sender = recipient;
-							fh.numWordsFollowing = 2;
+							fh.numWordsFollowing = 3; // XXX check if 2 or 3
 							cpu->mmu->writeDwordToExternal(resultAddr, *((Dword*)&fh));
 							Dword cond = 0xffffffff;
 							if(buttonState[BUTTON_START] == 1)

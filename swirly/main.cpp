@@ -68,6 +68,7 @@ int main(int argc, char *argv[])
 	if(cpu->debugger->runScript("autoexec.script") == false)
 		printf("Couldn't find autoexec.script!\n");
 
+	cpu->gdrom->load("../images/linux.iso");
 	printf("Fasten your seatbelts.\n\n");
 	// PC should be 0xA0000000 at this point
 	cpu->go();
