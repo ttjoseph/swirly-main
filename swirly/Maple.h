@@ -80,6 +80,7 @@ public:
 
 	Dword asic9a;
 	Dword asicAckA;
+	Dword g2Fifo;
 	
 private:
 	Maple() {}

@@ -38,7 +38,12 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 			return (asicAckA | 0x8);
 
 		case 0xa05f688c: // XXX: g2_fifo
-			return 1; // hack, return 0 for kallistios
+		        // to signal resume g2 dma return 0x20;
+		        // to signal ready return 0;
+		        // some programs need 1 back though... so we do 0x21
+		    
+		        g2Fifo = g2Fifo ? 0 : 0x21;
+		        return g2Fifo; 
 
 		case 0xa05f6c18: // Maple DMA
 			cpu->debugger->print("Maple: check DMA status, PC=%08X\n", cpu->PC);

@@ -198,7 +198,7 @@ static opcode_handler_struct sh_opcode_handler_table[] =
 	{&SHCpu::STSMACH             , 0xf0ff, 0x000a},
 	{&SHCpu::STSMACL             , 0xf0ff, 0x001a},
 	{&SHCpu::STSPR               , 0xf0ff, 0x002a},
-	{&SHCpu::STSFPSCR            , 0xf0ff, 0x0062},
+	{&SHCpu::STSFPSCR            , 0xf0ff, 0x006a},
 	{&SHCpu::STSFPUL             , 0xf0ff, 0x005a},
 	{&SHCpu::STSMMACH            , 0xf0ff, 0x4002},
 	{&SHCpu::STSMMACL            , 0xf0ff, 0x4012},
@@ -670,8 +670,19 @@ void SHCpu:: STCMRBANK(Word op)
 
 void SHCpu:: SLEEP(Word op)
 {
-	// TODO: make this do something
-	PC+=2;
+        //PC+=2;
+
+        // basically do nothing here. wait for an interrupt or reset.
+        // hack--emulate an interrupt
+        SPC=PC;
+	SSR=SR;
+        (*(Dword *)(ccnRegs+INTEVT)) = 0x1c0;
+	
+	SR |= F_SR_MD;
+	SR |= F_SR_RB;
+	SR |= F_SR_BL;
+	
+	PC=VBR+0x600;
 }
 
 void SHCpu:: SHLR(Word op)
@@ -867,6 +878,8 @@ void SHCpu:: PREF(Word op)
 	int n = getN(op);
 	if((R[n] & 0xfc000000) == 0xe0000000) // is this a store queue write?
 		mmu->storeQueueSend(R[n]);
+	else
+	        printf("Unknown PREF access: %08x\n", R[n]);
 	PC+=2;
 }
 
@@ -2115,9 +2128,9 @@ void SHCpu::FADD(Word op)
 		tmpa.i[0] = FR_Dwords[n+1];
 		tmpb.i[1] = FR_Dwords[m];
 		tmpb.i[0] = FR_Dwords[m+1];
-		printf("FADD: %f * %f = ", tmpa.d, tmpb.d);
+		//printf("FADD: %f * %f = ", tmpa.d, tmpb.d);
 		tmpa.d += tmpb.d;
-		printf("%f\n", tmpa.d);
+		//printf("%f\n", tmpa.d);
 		FR_Dwords[n] = tmpa.i[1];
 		FR_Dwords[n+1] = tmpa.i[0];
 //		DR[n]+=DR[m];
@@ -2138,9 +2151,9 @@ void SHCpu::FMUL(Word op)
 		tmpa.i[0] = FR_Dwords[n+1];
 		tmpb.i[1] = FR_Dwords[m];
 		tmpb.i[0] = FR_Dwords[m+1];
-		printf("FMUL: %f * %f = ", tmpa.d, tmpb.d);
+		//printf("FMUL: %f * %f = ", tmpa.d, tmpb.d);
 		tmpa.d *= tmpb.d;
-		printf("%f\n", tmpa.d);
+		//printf("%f\n", tmpa.d);
 		FR_Dwords[n] = tmpa.i[1];
 		FR_Dwords[n+1] = tmpa.i[0];
 //		DR[n]*=DR[m];
@@ -2426,9 +2439,9 @@ void SHCpu::FDIV(Word op)
 		cnv_dbl tmpa, tmpb;
 		tmpa.i[1] = FR_Dwords[n]; tmpa.i[0] = FR_Dwords[n+1];
 		tmpb.i[1] = FR_Dwords[m]; tmpb.i[0] = FR_Dwords[m+1];
-		printf("FDIV: %f / %f = ", tmpa.d, tmpb.d);
+		//printf("FDIV: %f / %f = ", tmpa.d, tmpb.d);
 		tmpa.d /= tmpb.d;
-		printf("%f\n", tmpa.d);
+		//printf("%f\n", tmpa.d);
 		FR_Dwords[n] = tmpa.i[1]; FR_Dwords[n+1] = tmpa.i[0];
 //		DR[n] /= DR[m];
 	}
@@ -2559,9 +2572,9 @@ void SHCpu::FTRC(Word op)
 		cnv_dbl tmpa;
 		tmpa.i[1] = FR_Dwords[n];
 		tmpa.i[0] = FR_Dwords[n+1];
-		printf("FTRC: %f = ", tmpa.d);
+		//printf("FTRC: %f = ", tmpa.d);
 		FPUL = (Dword)(tmpa.d);	// XXX: (float) - always truncates too much
-		printf(" %08x (%d)\n", FPUL, FPUL);
+		//printf(" %08x (%d)\n", FPUL, FPUL);
 //		FPUL = (float) DR[n];
 	}
 	else {
@@ -2763,12 +2776,12 @@ void SHCpu::go()
 	{
 		if(debugger->prompt())
 		{
-			try {
+		        //try {
 				d = mmu->fetchInstruction(PC);
 				executeInstruction(d);
-			} catch (...) { // SHMmu::xMMUException
-				printf("Exception caught PC=%08x\n", SPC);
-			}
+			//} catch (...) { // SHMmu::xMMUException
+			//	printf("Exception caught PC=%08x\n", SPC);
+			//}
 			numIterations++;
 			checkInterrupt();
 		}
