@@ -7,7 +7,7 @@
 
 #include "Gdrom.h"
 
-Gdrom::Gdrom(SHCpu *shcpu, int startsector, int sectorsize = 0)
+Gdrom::Gdrom(SHCpu *shcpu, int startsector, int sectorsize)
 	: startSector_(startsector), sectorSize(sectorsize), cdImage(NULL), cpu(shcpu)
 { }
 
