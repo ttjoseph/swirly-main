@@ -4,8 +4,8 @@
 
 l ../fakebootrom/fbr.bin a0000000
 l ../images/IP.BIN 8c008000
-l ../images/stars.srec % Dan Potter's stars demo
+% l ../images/stars.srec % Dan Potter's stars demo
 % l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/320x240/320x240.srec
 % l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/640x480/640x480.srec
-% l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/ta/ta.srec
+l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/ta/ta.srec
 

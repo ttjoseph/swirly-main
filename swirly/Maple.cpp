@@ -118,6 +118,7 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 						// then say what buttons are down
 						if(recipient == D5)
 						{
+							printf("Maple: Asking about the lone gamepad\n");
 							FrameHeader fh;
 							fh.command = MAPLE_DATA_TRANSFER_RESP;
 							fh.recipient = sender;

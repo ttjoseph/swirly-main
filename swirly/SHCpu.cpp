@@ -2,6 +2,8 @@
 //
 //////////////////////////////////////////////////////////////////////
 
+#include <math.h>
+
 #include "SHCpu.h"
 #include "SHMmu.h"
 #include "SHDmac.h"
@@ -2102,11 +2104,16 @@ void SHCpu::FTRC(int n)
 
 void SHCpu::FSCA(int n)
 {
+	float angle = ((float)FPUL / 65535.0) * 2 * M_PI;
+	FR[n] = sin(angle);
+	FR[n+1] = cos(angle);
 	PC+=2;
 }
 
 void SHCpu::FSRRA(int n)
 {
+	// FIXME: should this work on DR regs as well?
+	FR[n] = 1/sqrt(FR[n]);
 	PC+=2;
 }
 

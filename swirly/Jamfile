@@ -3,8 +3,8 @@
 C++ = g++ ;
 C++FLAGS = -I/usr/X11R6/include ;
 CC = gcc ;
-# OPTIM = -O3 -fomit-frame-pointer ;
-OPTIM = -ggdb -O0 ;
+OPTIM = -O3 -fomit-frame-pointer ;
+# OPTIM = -ggdb -O0 ;
 AS = nasm ;
 ASFLAGS = -f elf ;
 Main swirly :

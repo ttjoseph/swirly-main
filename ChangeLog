@@ -1,3 +1,6 @@
+6 September 2001
+	- Implemented FSCA and FSRRA - they should work but may not do 100% what the
+	  real DC versions do.
 4 September 2001
 	- Complete rewrite of Gpu
 3 September 2001
@@ -5,8 +8,8 @@
 	- Opcode 0x406a (lds r0, fpscr) works - for some unknown reason I couldn't
 	  figure out what it was, despite the fact it was in the same manual as
 		all the rest of the opcodes.  I must have been smoking crack.
-	- Made SHMmu::accessP4 die gracefully when it is told to access a part of
-	  memory that doesn't exist.
+	- Made SHMmu::accessP4 die gracefully when it is told to access something
+	  that doesn't exist
 	- Fixed serious problem where R8-R15 were switched out along with R0-R7 on
 	  a register bank switch (SR.RB changes) - only one copy of R8-R15 are
 		supposed to exist
