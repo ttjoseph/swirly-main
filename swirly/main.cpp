@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
 	cpu->gdrom->load("../images/linux.iso");
 	printf("Fasten your seatbelts.\n\n");
 	// PC should be 0xA0000000 at this point
-	cpu->go();
+	cpu->go_rec();
 
 	SDL_FreeSurface(icon); // as if we ever reach here anyway
 

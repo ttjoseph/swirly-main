@@ -14,11 +14,13 @@ using namespace std;
 #include "Overlord.h"
 #include "Gpu.h"
 #include "dcdis.h"
+#include "ix86.h"
 
 float shfpu_sop0, shfpu_sop1, shfpu_sresult;
 double shfpu_dop0, shfpu_dop1, shfpu_dresult;
 
 void  (SHCpu::*sh_instruction_jump_table[0x10000])(Word);
+void  (SHCpu::*sh_recompile_jump_table[0x10000])(Word);
 
 static opcode_handler_struct sh_opcode_handler_table[] =
 {
@@ -233,6 +235,27 @@ static opcode_handler_struct sh_opcode_handler_table[] =
 	{&SHCpu::dispatchSwirlyHook  , 0xffff, 0xfffd}	// last entry
 };
 
+static opcode_handler_struct sh_recompile_handler_table[] =
+{
+/*   function                      mask    match */
+	{&SHCpu::recBranch           , 0xf0ff, 0x400b},
+	{&SHCpu::recBranch           , 0xf000, 0xa000},
+	{&SHCpu::recBranch           , 0xff00, 0x8b00},
+	{&SHCpu::recBranch           , 0xff00, 0x8f00},
+	{&SHCpu::recBranch           , 0xff00, 0x8900},
+	{&SHCpu::recBranch           , 0xff00, 0x8d00},
+	{&SHCpu::recBranch           , 0xf000, 0xb000},
+	{&SHCpu::recBranch           , 0xff00, 0xc300},
+	{&SHCpu::recBranch           , 0xf0ff, 0x0023},
+	{&SHCpu::recBranch           , 0xf0ff, 0x0003},
+	{&SHCpu::recBranch           , 0xf0ff, 0x402b},
+	{&SHCpu::recBranch           , 0xffff, 0x002b},
+	{&SHCpu::recBranch           , 0xffff, 0x000b},
+	{&SHCpu::recNOP              , 0xffff, 0x0009},
+	{&SHCpu::recMOV              , 0xf00f, 0x6003},
+	{&SHCpu::recHook             , 0xffff, 0xfffd}	// last entry
+};
+
 
 SHCpu::SHCpu()
 {
@@ -248,6 +271,7 @@ SHCpu::SHCpu()
 	gdrom = new Gdrom(this, 0);
 	spu = new Spu(this);
 	maple = new Maple(this);
+	branch = 0;
 	reset();
 }
 
@@ -2811,4 +2835,187 @@ inline void SHCpu::checkInterrupt()
 	{
 		intc->externalInt(9, 0x320);
 	}
+}
+
+// ***************************** Recompiler *****************************
+int SHCpu::build_cl()
+{
+	Word d;
+
+	if (((Dword)recPtr - (Dword)recMem) >= (0x800000 - 0x8000)) {
+		printf("Recompile Memory exceeded!\n");
+		exit(-1);
+		// recReset(); -> clear recR*M and reset recPtr
+	}
+
+	char *p;
+	Dword tpc = (PC & 0x1fffffff);
+	if ((tpc >= 0x0c000000) && (tpc < 0x0d000000)) {
+		p = (char*)(recRAM+((tpc-0x0c000000)<<1));
+	} else if ((tpc >= 0x00000000) && (tpc < 0x00200000)) {
+		p = (char*)(recROM+((tpc-0x00000000)<<1));
+	}
+	else { printf("Access to illegal mem!\n"); }
+        
+	*((Dword*)p) = (Dword)recPtr;
+	recPC = PC;
+
+	// write function header
+	PUSHA32();
+
+	unsigned long i = 0;
+	for (; i<1000; i++) {
+		d = mmu->fetchInstruction(recPC);
+		(this->*sh_recompile_jump_table[d])(d);
+
+		if (branch) {
+			break;
+		}
+		recPC += 2;
+	}
+
+	// write function end
+	ADD32ItoM((unsigned long)&numIterations, (unsigned long)i);
+	POPA32();
+	RET();
+	branch = 0;
+
+	return 0;
+}
+
+void SHCpu::go_rec()
+{
+    opcode_handler_struct *ostruct;
+	int i;
+
+	recMem = new char[0x800000]; // 8mb
+	recRAM = new char[0x1000000*2]; // 32mb (2*16mb -> sh-opcode word size)
+	recROM = new char[0x200000*2];
+	if (recRAM == NULL || recROM == NULL || recMem == NULL) {
+		printf("Error allocating memory"); exit(-1);
+	}
+
+	recPtr = recMem;
+	
+	printf("Building Jumptable\n");	
+	for(i = 0; i < 0x10000; i++)
+	{
+		/* default to native */
+		sh_recompile_jump_table[i] = &SHCpu::recNativeOpcode;
+    }
+
+	ostruct = sh_recompile_handler_table;
+	do
+	{
+		for(i = 0;i < 0x10000;i++)
+		{
+			if((i & ostruct->mask) == ostruct->match)
+            {
+				sh_recompile_jump_table[i] = ostruct->opcode_handler;
+            }
+        }
+		ostruct++;
+	} while(ostruct->match != 0xfffd);
+	sh_recompile_jump_table[0xfffd] = &SHCpu::recHook;
+
+	for(i = 0; i < 0x10000; i++)
+	{
+		/* default to illegal */
+		sh_instruction_jump_table[i] = &SHCpu::unknownOpcode;
+    }
+
+	ostruct = sh_opcode_handler_table;
+	do
+	{
+		for(i = 0;i < 0x10000;i++)
+		{
+			if((i & ostruct->mask) == ostruct->match)
+            {
+				sh_instruction_jump_table[i] = ostruct->opcode_handler;
+            }
+        }
+		ostruct++;
+	} while(ostruct->match != 0xfffd);
+	sh_instruction_jump_table[0xfffd] = &SHCpu::dispatchSwirlyHook;
+	
+	printf("Start execution\n");	
+
+	Word d;
+
+	addInterrupt(0x80000, 0);	// first SDL event
+	addInterrupt(0x1000, 1);	// first VBL event
+
+	for(;;)
+	{
+		if(debugger->prompt())
+		{
+
+		void (**recFunc)();
+		char *p;
+
+		Dword tpc = (PC & 0x1fffffff);
+		if ((tpc >= 0x0c000000) && (tpc < 0x0d000000)) {
+			p = (char*)(recRAM+((tpc-0x0c000000)<<1));
+		} else if ((tpc >= 0x00000000) && (tpc < 0x00200000)) {
+			p = (char*)(recROM+((tpc-0x00000000)<<1));
+		}
+		else { printf("Access to illegal mem: %08x\n", tpc); return; }
+
+		recFunc = (void (**)()) (Dword)p;
+        if (*recFunc) {
+                (*recFunc)();
+        } else {
+                build_cl();
+                (*recFunc)();
+        }
+
+		checkInterrupt();
+		}
+	} // for
+}
+
+void SHCpu::recNativeOpcode(Word op)
+{
+	PUSH32I  ((unsigned long)op);	// XXX: op only 16bit
+	PUSH32I  ((unsigned long)this);	
+	MOV32ItoR(EAX, (unsigned long)(this->*sh_instruction_jump_table[op]));	
+	CALL32R  (EAX);
+	ADD32ItoR(ESP, 8);
+}
+
+void SHCpu::recBranch(Word op)
+{
+	PUSH32I  ((unsigned long)op);	// XXX: op only 16bit
+	PUSH32I  ((unsigned long)this);	
+	MOV32ItoR(EAX, (unsigned long)(this->*sh_instruction_jump_table[op]));	
+	CALL32R  (EAX);
+	ADD32ItoR(ESP, 8);
+	branch = 1;
+}
+
+void SHCpu::recHook(Word op)
+{
+	PUSH32I  ((unsigned long)op);	// XXX: op only 16bit
+	PUSH32I  ((unsigned long)this);	
+	MOV32ItoR(EAX, (unsigned long)(this->*sh_instruction_jump_table[op]));	
+	CALL32R  (EAX);
+	ADD32ItoR(ESP, 8);
+	recPC += 2;
+}
+
+void SHCpu::recNOP(Word op)
+{
+//	PC+=2;
+	ADD32ItoM((unsigned long)&PC, 0x2);
+}
+
+void SHCpu::recMOV(Word op)
+{
+	int m = getM(op), n = getN(op);
+//	R[n]=R[m];
+	MOV32MtoR(EBX, (unsigned long)&R);
+	MOV32R8toR(EAX, EBX, m*4);
+	MOV32RtoR8(EBX, n*4, EAX);
+//	PC+=2;
+	ADD32ItoM((unsigned long)&PC, 0x2);
 }

@@ -105,6 +105,7 @@ class SHCpu
 {
 public:
 	void go();
+	void go_rec();
 	void exception(Dword type, Dword addr, Dword data, char *datadesc = 0);
 	void executeInstruction(Word d);
 	void reset();
@@ -157,6 +158,20 @@ public:
 	void checkInterrupt();
 	void addInterrupt(Dword at, Dword type);
 
+	Dword recPC;
+	char* recMem;
+	char* recRAM;
+	char* recROM;
+	char* recPtr;
+	int branch;
+	
+	int build_cl();
+	void recNativeOpcode(Word op);
+	void recHook(Word op);
+	void recBranch(Word op);
+	void recNOP(Word op);
+	void recMOV(Word op);
+		
 public:	// Needs to be public
 	void dispatchSwirlyHook(Word op);
 	void unknownOpcode(Word op);
