@@ -1,0 +1,102 @@
+Swirly - a Dreamcast emulator for the use of amateur DC programmers
+-------------------------------------------------------------------
+Copyright (c)2001 Tom Joseph - idiot@users.sourceforge.net
+
+Website: http://swirly.sourceforge.net
+
+Quickstart
+----------
+
+First get the latest SDL runtime from http://www.libsdl.org and install it.
+
+You need to provide an IP.BIN for Swirly to run.  Marcus Comstedt's IP.BIN creator
+works - get it at http://mc.pp.se/dc.  Swirly comes with a boot ROM image and
+a sample program to run.
+
+*** Swirly CANNOT run commercial games! ***
+
+When running your own programs on Swirly
+----------------------------------------
+
+The TRAPA instruction causes an unconditional break in execution.  Use it to break at the
+beginning of new untested routines you write so you can follow their execution step-by-step
+without having to know where they are in memory first.
+
+The boot ROM provided with Swirly sucks and it doesn't fake very many syscalls.
+
+Look at main.cpp to see how to load your own programs.  They should be compiled in flat binary
+format and loaded into the proper location in memory with Overlord::load().  You'll have to
+modify main.cpp to change the files that Swirly loads.
+
+Swirly reports that it has a VGA box connected to it when programs read the hardware register
+BSC.PDTRA.
+
+To compile Swirly
+-----------------
+
+You need to have the SDL development library and headers installed.  Get them from
+http://www.libsdl.org.  By the way, SDL is an excellent cross-platform library for video,
+sound, and some other things.  It greatly eased development of Swirly.
+
+Do the standard "configure; make" stuff.  I have never done "make install" with Swirly and
+you probably won't either.
+
+Known issues
+------------
+
+- Swirly is extremely slow.  I haven't even tried to optimize it.  There are many areas where
+  it could be optimized.
+- I don't trust the FPU implementation.  It's not complete and I haven't even tested the
+  double-precision part.
+- Actually, nothing except the core CPU is correctly emulated, and nothing is complete.
+  I've just been writing skeletons of peripheral units just so I can get programs to work.
+  At this point, just because a program works on Swirly doesn't mean it will work on a DC.
+  If it works on a DC (and the stuff it uses is emulated on Swirly) it will likely work
+  on Swirly.  My goal is to remedy this situation, but for now, given time constraints,
+  all I can do is emulate just as much as is needed by demos.
+- Exceptions aren't supported.  Actually I used to have an implementation of the exception
+  handling but it was designed horribly and didn't support proper exception priorities
+  so I canned it.
+- There isn't usable Maple Bus support, so things like reading from controllers won't work.
+
+Debugger commands
+-----------------
+
+Swirly comes with its own crappy debugger.  I really should try and get Swirly to interface
+with GDB; I bet that would help a lot.
+
+Anyway, here are some commands you can use in Swirly's debugger.  Numbers and addresses you type
+in should be in hex (except for the parameter to bc).
+
+g - g means Go.
+df - Draw Frame.  Updates the screen from the framebuffer.  Try this if you don't see the
+   results of writing to the framebuffer.
+bx <addr> - Sets an execution breakpoint at <addr>. "bx 8c008300" sets a breakpoint at 0x8c008300.
+bm <addr> - Sets a memory access breakpoint at <addr>.  Syntax is the same as bx.
+bl - Lists breakpoints.
+
+bc <bpnum> - Clears breakpoint <bpnum>
+r <reg> <val> - Sets register <reg> to <val>.  "r pc a0000000" sets PC to 0xA0000000, for example.
+d <addr> - Dumps memory at <addr>.
+fr - Dumps floating-point registers.
+q - Quits Swirly.
+
+To single step, simply press Enter instead of typing a command.
+
+Read this, especially if you are a lawyer for Sega
+--------------------------------------------------
+
+Dreamcast is a trademark of Sega.  Neither Swirly nor I are associated with Sega.  Other
+trademarks are trademarks of their respective owners; no infringement is intended.
+
+Swirly is NOT written in order to play commercial games.  It is being written in order to help
+the cause of amateur Dreamcast hackers who want to write demos and such for the Dreamcast.
+Neither Swirly nor I have anything to do with the "warez" scene and I have no intent
+to unlawfully use Sega's or anybody else's intellectual property.  I don't know how to copy
+GDROMs or any of that crap so don't ask.
+
+Thanks
+------
+
+Marcus Comstedt, Dan Potter, Lars Olsson - for their excellent hacking efforts and code.
+

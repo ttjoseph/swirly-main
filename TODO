@@ -1,0 +1,43 @@
+- Put SCIF printf's and trapa's in tatest and do some debugging
+- Implement the FPU in assembly so we don't have to deal with C/C++'s
+	automatic type conversion.  Also it ought to be faster.
+- Optimize memory accesses.  Perhaps have a "TLB" that caches the host addresses of
+  recently accessed SH memory.  On a per-page basis?
+  	- Think about this one.  We already have a couple TLBs and adding another one
+  	  probably won't speed it up.	
+- Finish that FPU! Do 64-bit floats work?
+	- Matrix instructions
+	- Debugger commands to support double-precision stuff
+- Maple bus.
+- Finish the SREC loading support to make it tolerate unsuppored S types
+- Make 3D and OpenGL support better
+	- Design: setupGL(), drawFrame(), and makeScreen() in Gpu could be named better.  For
+	  example, setupGL has a bad name because in addition to setting up OpenGL it also does
+	  GL buffer swapping, when it seems that drawFrame() should do that.
+- Exceptions.
+	- Change SHCpu::go and Debugger because as it stands now each instruction is fetched twice
+	  whenever the debugger prompt is used.  We don't want the debugger prompt triggering
+	  exceptions.
+	- When exceptions are finally implemented, things that can cause exceptions will need a
+	  going over.  For example, the TMU should be able to generate interrupts, but it doesn't
+	  at the moment.
+- User mode stuff in general.
+	- Store queues, etc
+- Make the screen update itself on a regular basis better.  Currently the periodic update is a
+  kludge.
+- Make serial interface better.  Maybe tunnel it over TCP/IP.  Only SCIF is implemented at the
+  moment...does anything use SCI?
+- A GDB stub eventually, which could use that SCIF TCP/IP tunneling.
+- More of the cache controller.
+- GDROM syscalls
+	Swirly will take in an ISO image of the data track.  No need to have an image of the audio track.
+	* Should specify just how big that audio track is, perhaps through a command-line switch *
+	This means that the sector numbers of the ISO image should be offset by a certain nonzero
+	value.  For example, if the sector number offset is 1000, then a GDROM_CMD_READSECTORS of
+	sector 1000 should actually read sector 0 of the ISO image.  Anything lower than that
+	is a read to the junk audio track.
+
+	To use ISO images we must know what the sector offset is that results from the junk audio
+	track being the first session.  The default is 512 at the moment.
+- Make the debugger U command work
+

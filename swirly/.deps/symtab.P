@@ -1,0 +1,3 @@
+symtab.o: symtab.c dcdis.h
+symtab.c :
+dcdis.h :

@@ -1,0 +1,34 @@
+# SubDir TOP swirly ;
+
+C++ = g++ ;
+C++FLAGS = -I/usr/X11R6/include ;
+CC = gcc ;
+OPTIM = -O3 ;
+AS = nasm ;
+ASFLAGS = -f elf ;
+Main swirly :
+	Debugger.cpp
+	Gpu.cpp    
+	Overlord.cpp  
+	SHCpu.cpp   
+	SHIntc.cpp  
+	SHSci.cpp  
+	Spu.cpp
+	Gdrom.cpp     
+	Maple.cpp  
+	SHBsc.cpp     
+	SHDmac.cpp  
+	SHMmu.cpp   
+	SHTmu.cpp 
+	main.cpp
+	dcdis.c
+	decode.c
+	scramble.c
+	symtab.c
+	shfpu.s
+	;
+LINKLIBS on swirly =
+	-lpthread
+	-lSDL
+	-lGL
+	;
