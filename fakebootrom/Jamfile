@@ -5,4 +5,4 @@ LINKFLAGS = -EL --oformat binary -Ttext 0xA0000000 ;
 AS = sh4-linux-as ;
 LINK = sh4-linux-ld ;
 
-Main fbr.bin : main.s ;
+Main fbr.bin : main.s romfont.s ;
