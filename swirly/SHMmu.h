@@ -17,13 +17,16 @@
 
 // values used internally for SHMmu::eventType
 #define MMU_READ 0x0100
-#define MMU_READ_BYTE 0x0110
-#define MMU_READ_WORD	0x0111
-#define MMU_READ_DWORD 0x0112
 #define MMU_WRITE 0x0200
-#define MMU_WRITE_BYTE 0x0213
-#define MMU_WRITE_WORD 0x0214
-#define MMU_WRITE_DWORD 0x0215
+#define MMU_BYTE 1
+#define MMU_WORD 2
+#define MMU_DWORD 4
+#define MMU_READ_BYTE (MMU_READ | MMU_BYTE)
+#define MMU_READ_WORD	(MMU_READ | MMU_WORD)
+#define MMU_READ_DWORD (MMU_READ | MMU_DWORD)
+#define MMU_WRITE_BYTE (MMU_WRITE | MMU_BYTE)
+#define MMU_WRITE_WORD (MMU_WRITE | MMU_WORD)
+#define MMU_WRITE_DWORD (MMU_WRITE | MMU_DWORD)
 // junk value to signal a TLB miss internally
 #define MMU_TLB_MISS 0xffffff00
 

@@ -127,7 +127,7 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 							Dword cond = 0xffffffff;
 							if(buttonState[BUTTON_START] == 1)
 							{
-								printf("Start button pressed - resultAddr = %08x\n", resultAddr);
+								printf("Maple: Start button pressed - resultAddr = %08x\n", resultAddr);
 								cond &= ~D3;
 							}
 							cpu->mmu->writeDwordToExternal(resultAddr+4, Overlord::switchEndian(MAPLE_CONTROLLER));

@@ -1,3 +1,16 @@
+4 September 2001
+	- Complete rewrite of Gpu
+3 September 2001
+	- Added placeholders for fsca and fsrra instructions
+	- Opcode 0x406a (lds r0, fpscr) works - for some unknown reason I couldn't
+	  figure out what it was, despite the fact it was in the same manual as
+		all the rest of the opcodes.  I must have been smoking crack.
+	- Made SHMmu::accessP4 die gracefully when it is told to access a part of
+	  memory that doesn't exist.
+	- Fixed serious problem where R8-R15 were switched out along with R0-R7 on
+	  a register bank switch (SR.RB changes) - only one copy of R8-R15 are
+		supposed to exist
+	- The TMU now sets TCRx.UNF and resets TCNTx to TCORx when a timer underflows
 1 September 2001
 	- Added "l" debugger command, which loads the contents of a file to SH memory
 	- Overlord::loadSrec now prints a message if it can't find the file to load

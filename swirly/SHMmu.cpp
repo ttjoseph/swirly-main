@@ -85,7 +85,9 @@ void SHMmu::writeDwordToExternal(Dword addr, Dword d)
 
 void SHMmu::writeDouble(Dword addr, Double d)
 {
-	cpu->debugger->flamingDeath("writeDouble not implemented yet");
+	writeDword(addr, *(((Dword*)&d)));
+	writeDword(addr+4, *(((Dword*)&d)+4));
+	// cpu->debugger->flamingDeath("writeDouble not implemented yet");
 }
 
 void SHMmu::writeFloat(Dword addr, Float d)
@@ -98,8 +100,11 @@ void SHMmu::writeFloat(Dword addr, Float d)
 
 Double SHMmu::readDouble(Dword addr)
 {
-	cpu->debugger->flamingDeath("readDouble not implemented yet");
-	return 0;
+//	cpu->debugger->flamingDeath("readDouble not implemented yet");
+	Dword tmp[2];
+	tmp[0] = readDword(addr);
+	tmp[1] = readDword(addr+4);
+	return *((Double*) tmp);
 }
 
 Float SHMmu::readFloat(Dword addr)
@@ -118,7 +123,7 @@ Word SHMmu::fetchInstruction(Dword addr)
 	Dword lrui, utlbentry;
 
 	eventType = MMU_READ_WORD;
-	
+
 	switch(addr >> 29) // check which area we want
 	{
 		case 0: // P0, U0
@@ -557,7 +562,8 @@ Dword SHMmu::accessP4()
 	case 0xD8: return(tempData = cpu->tmu->hook(eventType, accessAddr, tempData));
 	case 0xE0:
 	case 0xE8: return(tempData = cpu->sci->hook(eventType, accessAddr, tempData));
-	default: tempData = 0;
+	default:
+		cpu->debugger->flamingDeath("SHMmu:accessP4: Tried to access %08x, which I can't handle", accessAddr);
 	}
 
 	switch(eventType)

@@ -2100,14 +2100,24 @@ void SHCpu::FTRC(int n)
 
 }
 
+void SHCpu::FSCA(int n)
+{
+	PC+=2;
+}
+
+void SHCpu::FSRRA(int n)
+{
+	PC+=2;
+}
+
 void SHCpu::setSR(Dword d)
 {
-	SR = d;
+	Dword *oldR = R;
 
-	if(SR & F_SR_MD)
+	if(d & F_SR_MD)
 	{
 		// set the register banks
-		if(SR & F_SR_RB)
+		if(d & F_SR_RB)
 		{
 			R = RBANK1;
 			RBANK = RBANK0;
@@ -2124,6 +2134,14 @@ void SHCpu::setSR(Dword d)
 		R = RBANK0;
 		RBANK = RBANK1;
 	}
+	// Only one copy of R8-R15 exist on a real SH4, but in emulation we have two -
+	// we need to keep them in sync
+	if(R != oldR) // only sync the regs if the banks were switched
+	{
+		for(int i=8; i<16; i++)
+			R[i] = RBANK[i];
+	}
+	SR = d;
 }
 
 void SHCpu::delaySlot()
@@ -2240,7 +2258,6 @@ void SHCpu::executeInstruction(Word d)
 	case 0x0018: SETT(); return;
 	case 0x0038: mmu->ldtlb(); return;
 	case 0x001b: SLEEP(); return;
-	case 0x406a: unknownOpcode(); return; // XXX: what is this opcode?!
 	case 0xfffd: dispatchSwirlyHook(); return;
 	}
 
@@ -2433,6 +2450,8 @@ void SHCpu::executeInstruction(Word d)
 	case 0xf0bd: FCNVDS(getN(d)); return;
 	case 0xf0ad: FCNVSD(getN(d)); return;
 	case 0xf03d: FTRC(getN(d)); return;
+	case 0xf0fd: FSCA(getN(d)); return;
+	case 0xf07d: FSRRA(getN(d)); return;
 	}
 
 	// Uh-oh; we can't figure out this instruction

@@ -1,6 +1,11 @@
 % Script file for Swirly debugger
 % Automatically executed!
+% ** Each line must be terminated with a newline **
 
 l ../fakebootrom/fbr.bin a0000000
 l ../images/IP.BIN 8c008000
-l ../images/stars.srec
+l ../images/stars.srec % Dan Potter's stars demo
+% l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/320x240/320x240.srec
+% l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/640x480/640x480.srec
+% l /home/tom/tmp/kos-1.1.2-dc-bin/examples/libdream/ta/ta.srec
+

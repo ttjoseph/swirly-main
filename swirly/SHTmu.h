@@ -23,12 +23,14 @@ public:
 private:
 	SHTmu() {}
 	void update();
+	void updateTcnt(Dword *tcnt, int id, Dword starttime);
 
 	Dword TCOR0, TCNT0, TCOR1, TCNT1, TCOR2, TCNT2, TCPR2;
 	Word TCR0, TCR1, TCR2;
 	Byte TOCR, TSTR;
 
 	Dword tcnt0StartTime, tcnt1StartTime, tcnt2StartTime;
+	int currTicks;
 };
 
 #endif

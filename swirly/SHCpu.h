@@ -140,6 +140,8 @@ private:
 	void dispatchSwirlyHook();
 	void unknownOpcode();
 	// XXX: I don't trust these FP instructions yet.
+	void FSCA(int n);
+	void FSRRA(int n);
 	void FTRC(int n);
 	void FSUB(int m, int n);
 	void FSTS(int n);
