@@ -43,6 +43,7 @@
 #define BUTTON_UP (BUTTON_BASE+3)
 #define BUTTON_DOWN (BUTTON_BASE+4)
 #define BUTTON_START (BUTTON_BASE+5)
+#define BUTTON_A (BUTTON_BASE+6)
 
 class Maple
 {
@@ -76,6 +77,9 @@ public:
 
 	class SHCpu *cpu;
 	Byte buttonState[256];
+
+	Dword asic9a;
+	Dword asicAckA;
 	
 private:
 	Maple() {}

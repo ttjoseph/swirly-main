@@ -74,7 +74,8 @@ private:
 	int pitch();
 	Dword baseAddr();
 	void masks(Dword *rm, Dword *gm, Dword *bm, Dword *am);
-
+	
+	int  actListType;
 	Byte regs[0x1000];
 	SDL_Surface *screen, *currBackBuffer, *backBuffers[GPU_MAXBACKBUFFERS];
 	Dword backBufferDCAddrs[GPU_MAXBACKBUFFERS], recvBuf[32];

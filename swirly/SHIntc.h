@@ -14,12 +14,13 @@ public:
 	Dword hook(int event, Dword addr, Dword data);
 	SHIntc(class SHCpu *cpu);
 	virtual ~SHIntc();
-	
+
 	void internalInt(int_source is, int ivt);
+	void externalInt(int irqnr, int ivt);
 	
 private:
 	SHIntc() {}
-	
+
 	Word ICR, IPRA, IPRB, IPRC;
 	
 	class SHCpu *cpu;

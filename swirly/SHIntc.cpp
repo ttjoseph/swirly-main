@@ -4,13 +4,26 @@
 
 SHIntc::SHIntc(class SHCpu *cpu)
 {
-	this->cpu = cpu;	
+	this->cpu = cpu;
 	reset();
 }
 
 SHIntc::~SHIntc()
 {
 	
+}
+
+void SHIntc::externalInt(int irqnr, int ivt)
+{
+	if (cpu->SR&F_SR_BL) return;
+
+	if ((15-irqnr) > ((cpu->SR >> 4) & 0xf)) {
+		cpu->SPC = cpu->PC;
+		cpu->SSR = cpu->SR;
+		CCNREG(INTEVT) = ivt; 
+		cpu->setSR(cpu->SR|F_SR_MD|F_SR_BL|F_SR_RB);
+		cpu->PC = cpu->VBR + 0x600;
+	}
 }
 
 void SHIntc::internalInt(int_source is, int ivt)

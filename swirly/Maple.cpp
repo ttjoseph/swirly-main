@@ -25,14 +25,17 @@ Maple::~Maple()
 
 Dword Maple::hook(int eventType, Dword addr, Dword data)
 {
+//	cpu->debugger->print("Maple::access: access to external addr %08X, PC=%08X\n", addr, cpu->PC);
+
 	switch(eventType)
 	{
 	case MMU_READ_DWORD:
 		switch(addr)
 		{
-			// XXX: is this Right?
-		case 0xa05f6900: // TA's VBL reg
-			return 0x88; // hack
+		case 0xa05f6930: // ASIC_IRQ9_A
+			return asic9a;
+		case 0xa05f6900: // ASIC_ACK_A
+			return (asicAckA | 0x8);
 
 		case 0xa05f688c: // XXX: g2_fifo
 			return 1; // hack, return 0 for kallistios
@@ -47,6 +50,13 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 	case MMU_WRITE_DWORD:
 		switch(addr)
 		{
+			case 0xa05f6930: // ASIC_IRQ9_A
+				asic9a = data;
+				return 0;
+			case 0xa05f6900: // ASIC_ACK_A
+				asicAckA &= ~data;
+				return 0;
+			
 			case 0xa05f6c04: // DMA address set
 				// we are given a physical address here, NOT a virtual address
 				dmaAddr = data;
@@ -61,10 +71,14 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 				if(data & 1) // if bit 0 is set, begin transfer
 				{
 					int cmd, recipient, sender, addtlwords, last, port, length;
+					Dword transferDesc1, transferDesc2, frameHeader, dmaPtr, resultAddr;
+					
+					dmaPtr = dmaAddr;
 					// XXX: finish me!
-					Dword transferDesc1 = cpu->mmu->access(dmaAddr, MMU_READ_DWORD);
-					Dword transferDesc2 = cpu->mmu->access(dmaAddr+4, MMU_READ_DWORD);
-					Dword frameHeader = cpu->mmu->access(dmaAddr+8, MMU_READ_DWORD);
+					do {
+					transferDesc1 = cpu->mmu->access(dmaPtr, MMU_READ_DWORD);
+					transferDesc2 = cpu->mmu->access(dmaPtr+4, MMU_READ_DWORD);
+					frameHeader = cpu->mmu->access(dmaPtr+8, MMU_READ_DWORD);
 					frameHeader = Overlord::switchEndian(frameHeader);
 					last = Overlord::bits(transferDesc1, 31, 31);
 					port = Overlord::bits(transferDesc1, 17, 16);
@@ -73,10 +87,10 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 					recipient = Overlord::bits(frameHeader, 23, 16);
 					sender = Overlord::bits(frameHeader, 15, 8);
 					addtlwords = Overlord::bits(frameHeader, 7, 0);
-					Dword resultAddr = Overlord::bits(transferDesc2, 28, 5) << 5;
+					resultAddr = Overlord::bits(transferDesc2, 28, 5) << 5;
 
-					/*
-					cpu->debugger->print("Maple: DMA transfer from %08X: ", dmaAddr);
+					/*					
+					cpu->debugger->print("Maple: DMA transfer from %08X: ", dmaPtr);
 					cpu->debugger->print("last %d, port %d, length %d ", last, port, length);
 					cpu->debugger->print("Result addr: %08X\n", transferDesc2);
 					cpu->debugger->print("Maple: command %08X: ", frameHeader);
@@ -85,11 +99,11 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 					cpu->debugger->print("sender: %d ", sender);
 					cpu->debugger->print("addtl words: %d\n", addtlwords);
 					*/
-
+					
 					switch(cmd)
 					{
 					case MAPLE_REQ_DEVICE_INFO:
-						cpu->debugger->print("Maple: request device info of %02x (on port %d)\n", recipient, Overlord::bits(recipient, 7, 6));
+//						cpu->debugger->print("Maple: request device info of %02x (on port %d)\n", recipient, Overlord::bits(recipient, 7, 6));
 						// if we are being asked about A0
 						if(recipient == (D5))
 						{ // ...then say there's a gamepad connected
@@ -111,14 +125,14 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 						break;
 
 					case MAPLE_GET_CONDITION:
-						cpu->debugger->print("Maple: get condition of %02x (on port %d)\n", recipient, Overlord::bits(recipient, 7, 6));
+//						cpu->debugger->print("Maple: get condition of %02x (on port %d)\n", recipient, Overlord::bits(recipient, 7, 6));
 						cpu->overlord->handleEvents();
 						//printf("%08x params[0]=%08x\n", dmaAddr, cpu->mmu->access(dmaAddr+4, MMU_READ_DWORD));
 						// are we asking about our lone gamepad?
 						// then say what buttons are down
 						if(recipient == D5)
 						{
-							printf("Maple: Asking about the lone gamepad\n");
+//							printf("Maple: Asking about the lone gamepad\n");
 							FrameHeader fh;
 							fh.command = MAPLE_DATA_TRANSFER_RESP;
 							fh.recipient = sender;
@@ -131,6 +145,11 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 								printf("Maple: Start button pressed - resultAddr = %08x\n", resultAddr);
 								cond &= ~D3;
 							}
+							if(buttonState[BUTTON_A] == 1)
+							{
+								printf("Maple: A button pressed - resultAddr = %08x\n", resultAddr);
+								cond &= ~D2;
+							}
 							cpu->mmu->writeDwordToExternal(resultAddr+4, Overlord::switchEndian(MAPLE_CONTROLLER));
 							//cpu->mmu->writeDwordToExternal(resultAddr+8, Overlord::switchEndian(cond));
 							cpu->mmu->writeDwordToExternal(resultAddr+8, cond);
@@ -142,6 +161,10 @@ Dword Maple::hook(int eventType, Dword addr, Dword data)
 						}
 						break;
 					}
+
+					dmaPtr += 8 + (length + 1)*4;					
+					} while (last != 1);
+					asicAckA |= 0x1000;	// Maple DMA Transfer finished
 				}
 				return 0;
 			case 0xa05f6c80: // timeout / speed

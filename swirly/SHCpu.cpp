@@ -4,6 +4,9 @@
 
 #include <math.h>
 
+#include <map>
+using namespace std;
+
 #include "SHCpu.h"
 #include "SHMmu.h"
 #include "SHDmac.h"
@@ -14,6 +17,222 @@
 
 float shfpu_sop0, shfpu_sop1, shfpu_sresult;
 double shfpu_dop0, shfpu_dop1, shfpu_dresult;
+
+void  (SHCpu::*sh_instruction_jump_table[0x10000])(Word);
+
+static opcode_handler_struct sh_opcode_handler_table[] =
+{
+/*   function                      mask    match */
+	{&SHCpu::ADDI                , 0xf000, 0x7000},
+	{&SHCpu::BRA                 , 0xf000, 0xa000},
+	{&SHCpu::BSR                 , 0xf000, 0xb000},
+	{&SHCpu::MOVI                , 0xf000, 0xe000},
+	{&SHCpu::MOVWI               , 0xf000, 0x9000},
+	{&SHCpu::MOVLI               , 0xf000, 0xd000},
+	{&SHCpu::MOVLS4              , 0xf000, 0x1000},
+	{&SHCpu::MOVLL4              , 0xf000, 0x5000},
+	{&SHCpu::LDCRBANK            , 0xf08f, 0x408e},
+	{&SHCpu::LDCMRBANK           , 0xf08f, 0x4087},
+	{&SHCpu::STCRBANK            , 0xf08f, 0x0082},
+	{&SHCpu::STCMRBANK           , 0xf08f, 0x4083},
+	{&SHCpu::FADD                , 0xf00f, 0xf000},
+	{&SHCpu::FMUL                , 0xf00f, 0xf002},
+	{&SHCpu::FMOV                , 0xf00f, 0xf00c},
+	{&SHCpu::FMOV_STORE          , 0xf00f, 0xf00a},
+	{&SHCpu::FMOV_LOAD           , 0xf00f, 0xf008},
+	{&SHCpu::FMOV_RESTORE        , 0xf00f, 0xf009},
+	{&SHCpu::FMOV_SAVE           , 0xf00f, 0xf00b},
+	{&SHCpu::FMOV_INDEX_LOAD     , 0xf00f, 0xf006},
+	{&SHCpu::FMOV_INDEX_STORE    , 0xf00f, 0xf007},
+	{&SHCpu::FCMPEQ              , 0xf00f, 0xf004},
+	{&SHCpu::FCMPGT              , 0xf00f, 0xf005},
+	{&SHCpu::FDIV                , 0xf00f, 0xf003},
+	{&SHCpu::FMAC                , 0xf00f, 0xf00e},
+	{&SHCpu::FSUB                , 0xf00f, 0xf001},
+	{&SHCpu::ADD                 , 0xf00f, 0x300c},
+	{&SHCpu::ADDC                , 0xf00f, 0x300e},
+	{&SHCpu::ADDV                , 0xf00f, 0x300f},
+	{&SHCpu::AND                 , 0xf00f, 0x2009},
+	{&SHCpu::CMPEQ               , 0xf00f, 0x3000},
+	{&SHCpu::CMPGE               , 0xf00f, 0x3003},
+	{&SHCpu::CMPGT               , 0xf00f, 0x3007},
+	{&SHCpu::CMPHI               , 0xf00f, 0x3006},
+	{&SHCpu::CMPHS               , 0xf00f, 0x3002},
+	{&SHCpu::CMPSTR              , 0xf00f, 0x200c},
+	{&SHCpu::DIV0S               , 0xf00f, 0x2007},
+	{&SHCpu::DIV1                , 0xf00f, 0x3004},
+	{&SHCpu::DMULS               , 0xf00f, 0x300d},
+	{&SHCpu::DMULU               , 0xf00f, 0x3005},
+	{&SHCpu::EXTSB               , 0xf00f, 0x600e},
+	{&SHCpu::EXTSW               , 0xf00f, 0x600f},
+	{&SHCpu::EXTUB               , 0xf00f, 0x600c},
+	{&SHCpu::EXTUW               , 0xf00f, 0x600d},
+	{&SHCpu::DO_MACL             , 0xf00f, 0x000f},
+	{&SHCpu::MACW                , 0xf00f, 0x400f},
+	{&SHCpu::MOV                 , 0xf00f, 0x6003},
+	{&SHCpu::MOVBS               , 0xf00f, 0x2000},
+	{&SHCpu::MOVWS               , 0xf00f, 0x2001},
+	{&SHCpu::MOVLS               , 0xf00f, 0x2002},
+	{&SHCpu::MOVBL               , 0xf00f, 0x6000},
+	{&SHCpu::MOVWL               , 0xf00f, 0x6001},
+	{&SHCpu::MOVLL               , 0xf00f, 0x6002},
+	{&SHCpu::MOVBM               , 0xf00f, 0x2004},
+	{&SHCpu::MOVWM               , 0xf00f, 0x2005},
+	{&SHCpu::MOVLM               , 0xf00f, 0x2006},
+	{&SHCpu::MOVBP               , 0xf00f, 0x6004},
+	{&SHCpu::MOVWP               , 0xf00f, 0x6005},
+	{&SHCpu::MOVLP               , 0xf00f, 0x6006},
+	{&SHCpu::MOVBS0              , 0xf00f, 0x0004},
+	{&SHCpu::MOVWS0              , 0xf00f, 0x0005},
+	{&SHCpu::MOVLS0              , 0xf00f, 0x0006},
+	{&SHCpu::MOVBL0              , 0xf00f, 0x000c},
+	{&SHCpu::MOVWL0              , 0xf00f, 0x000d},
+	{&SHCpu::MOVLL0              , 0xf00f, 0x000e},
+	{&SHCpu::MULL                , 0xf00f, 0x0007},
+	{&SHCpu::MULS                , 0xf00f, 0x200f},
+	{&SHCpu::MULU                , 0xf00f, 0x200e},
+	{&SHCpu::NEGC                , 0xf00f, 0x600a},
+	{&SHCpu::NEG                 , 0xf00f, 0x600b},
+	{&SHCpu::NOT                 , 0xf00f, 0x6007},
+	{&SHCpu::OR                  , 0xf00f, 0x200b},
+	{&SHCpu::SHAD                , 0xf00f, 0x400c},
+	{&SHCpu::SHLD                , 0xf00f, 0x400d},
+	{&SHCpu::SUB                 , 0xf00f, 0x3008},
+	{&SHCpu::SUBC                , 0xf00f, 0x300a},
+	{&SHCpu::SUBV                , 0xf00f, 0x300b},
+	{&SHCpu::SWAPB               , 0xf00f, 0x6008},
+	{&SHCpu::SWAPW               , 0xf00f, 0x6009},
+	{&SHCpu::TST                 , 0xf00f, 0x2008},
+	{&SHCpu::XOR                 , 0xf00f, 0x200a},
+	{&SHCpu::XTRCT               , 0xf00f, 0x200d},
+	{&SHCpu::MOVBS4              , 0xff00, 0x8000},
+	{&SHCpu::MOVWS4              , 0xff00, 0x8100},
+	{&SHCpu::MOVBL4              , 0xff00, 0x8400},
+	{&SHCpu::MOVWL4              , 0xff00, 0x8500},
+	{&SHCpu::ANDI                , 0xff00, 0xc900},
+	{&SHCpu::ANDM                , 0xff00, 0xcd00},
+	{&SHCpu::BF                  , 0xff00, 0x8b00},
+	{&SHCpu::BFS                 , 0xff00, 0x8f00},
+	{&SHCpu::BT                  , 0xff00, 0x8900},
+	{&SHCpu::BTS                 , 0xff00, 0x8d00},
+	{&SHCpu::CMPIM               , 0xff00, 0x8800},
+	{&SHCpu::MOVBLG              , 0xff00, 0xc400},
+	{&SHCpu::MOVWLG              , 0xff00, 0xc500},
+	{&SHCpu::MOVLLG              , 0xff00, 0xc600},
+	{&SHCpu::MOVBSG              , 0xff00, 0xc000},
+	{&SHCpu::MOVWSG              , 0xff00, 0xc100},
+	{&SHCpu::MOVLSG              , 0xff00, 0xc200},
+	{&SHCpu::MOVA                , 0xff00, 0xc700},
+	{&SHCpu::ORI                 , 0xff00, 0xcb00},
+	{&SHCpu::ORM                 , 0xff00, 0xcf00},
+	{&SHCpu::TRAPA               , 0xff00, 0xc300},
+	{&SHCpu::TSTI                , 0xff00, 0xc800},
+	{&SHCpu::TSTM                , 0xff00, 0xcc00},
+	{&SHCpu::XORI                , 0xff00, 0xca00},
+	{&SHCpu::XORM                , 0xff00, 0xce00},
+	{&SHCpu::BRAF                , 0xf0ff, 0x0023},
+	{&SHCpu::BSRF                , 0xf0ff, 0x0003},
+	{&SHCpu::CMPPL               , 0xf0ff, 0x4015},
+	{&SHCpu::CMPPZ               , 0xf0ff, 0x4011},
+	{&SHCpu::DT                  , 0xf0ff, 0x4010},
+	{&SHCpu::JSR                 , 0xf0ff, 0x400b},
+	{&SHCpu::JMP                 , 0xf0ff, 0x402b},
+	{&SHCpu::LDCSR               , 0xf0ff, 0x400e},
+	{&SHCpu::LDCGBR              , 0xf0ff, 0x401e},
+	{&SHCpu::LDCVBR              , 0xf0ff, 0x402e},
+	{&SHCpu::LDCSSR              , 0xf0ff, 0x403e},
+	{&SHCpu::LDCSPC              , 0xf0ff, 0x404e},
+	{&SHCpu::LDCDBR              , 0xf0ff, 0x40fa},
+	{&SHCpu::LDCMSR              , 0xf0ff, 0x4007},
+	{&SHCpu::LDCMGBR             , 0xf0ff, 0x4017},
+	{&SHCpu::LDCMVBR             , 0xf0ff, 0x4027},
+	{&SHCpu::LDCMSSR             , 0xf0ff, 0x4037},
+	{&SHCpu::LDCMSPC             , 0xf0ff, 0x4047},
+	{&SHCpu::LDCMDBR             , 0xf0ff, 0x40f6},
+	{&SHCpu::LDSMACH             , 0xf0ff, 0x400a},
+	{&SHCpu::LDSMACL             , 0xf0ff, 0x401a},
+	{&SHCpu::LDSPR               , 0xf0ff, 0x402a},
+	{&SHCpu::LDSFPSCR            , 0xf0ff, 0x406a},
+	{&SHCpu::LDSFPUL             , 0xf0ff, 0x405a},
+	{&SHCpu::LDSMFPUL            , 0xf0ff, 0x4056},
+	{&SHCpu::LDSMFPSCR           , 0xf0ff, 0x4066},
+	{&SHCpu::LDSMMACH            , 0xf0ff, 0x4006},
+	{&SHCpu::LDSMMACL            , 0xf0ff, 0x4016},
+	{&SHCpu::LDSMPR              , 0xf0ff, 0x4026},
+	{&SHCpu::MOVCAL              , 0xf0ff, 0x00c3},
+	{&SHCpu::MOVT                , 0xf0ff, 0x0029},
+	{&SHCpu::OCBI                , 0xf0ff, 0x0093},
+	{&SHCpu::OCBP                , 0xf0ff, 0x00a3},
+	{&SHCpu::OCBWB               , 0xf0ff, 0x00b3},
+	{&SHCpu::PREF                , 0xf0ff, 0x0083},
+	{&SHCpu::ROTCL               , 0xf0ff, 0x4024},
+	{&SHCpu::ROTCR               , 0xf0ff, 0x4025},
+	{&SHCpu::ROTL                , 0xf0ff, 0x4004},
+	{&SHCpu::ROTR                , 0xf0ff, 0x4005},
+	{&SHCpu::SHAL                , 0xf0ff, 0x4020},
+	{&SHCpu::SHAR                , 0xf0ff, 0x4021},
+	{&SHCpu::SHLL                , 0xf0ff, 0x4000},
+	{&SHCpu::SHLL2               , 0xf0ff, 0x4008},
+	{&SHCpu::SHLL8               , 0xf0ff, 0x4018},
+	{&SHCpu::SHLL16              , 0xf0ff, 0x4028},
+	{&SHCpu::SHLR                , 0xf0ff, 0x4001},
+	{&SHCpu::SHLR2               , 0xf0ff, 0x4009},
+	{&SHCpu::SHLR8               , 0xf0ff, 0x4019},
+	{&SHCpu::SHLR16              , 0xf0ff, 0x4029},
+	{&SHCpu::STCSR               , 0xf0ff, 0x0002},
+	{&SHCpu::STCGBR              , 0xf0ff, 0x0012},
+	{&SHCpu::STCVBR              , 0xf0ff, 0x0022},
+	{&SHCpu::STCSSR              , 0xf0ff, 0x0032},
+	{&SHCpu::STCSPC              , 0xf0ff, 0x0042},
+	{&SHCpu::STCSGR              , 0xf0ff, 0x003a},
+	{&SHCpu::STCDBR              , 0xf0ff, 0x00fa},
+	{&SHCpu::STCMSR              , 0xf0ff, 0x4003},
+	{&SHCpu::STCMGBR             , 0xf0ff, 0x4013},
+	{&SHCpu::STCMVBR             , 0xf0ff, 0x4023},
+	{&SHCpu::STCMSSR             , 0xf0ff, 0x4033},
+	{&SHCpu::STCMSPC             , 0xf0ff, 0x4043},
+	{&SHCpu::STCMSGR             , 0xf0ff, 0x4032},
+	{&SHCpu::STCMDBR             , 0xf0ff, 0x40f2},
+	{&SHCpu::STSMACH             , 0xf0ff, 0x000a},
+	{&SHCpu::STSMACL             , 0xf0ff, 0x001a},
+	{&SHCpu::STSPR               , 0xf0ff, 0x002a},
+	{&SHCpu::STSFPSCR            , 0xf0ff, 0x0062},
+	{&SHCpu::STSFPUL             , 0xf0ff, 0x005a},
+	{&SHCpu::STSMMACH            , 0xf0ff, 0x4002},
+	{&SHCpu::STSMMACL            , 0xf0ff, 0x4012},
+	{&SHCpu::STSMPR              , 0xf0ff, 0x4022},
+	{&SHCpu::STSMFPSCR           , 0xf0ff, 0x4062},
+	{&SHCpu::STSMFPUL            , 0xf0ff, 0x4052},
+	{&SHCpu::TAS                 , 0xf0ff, 0x401b},
+	{&SHCpu::FLDI0               , 0xf0ff, 0xf08d},
+	{&SHCpu::FLDI1               , 0xf0ff, 0xf09d},
+	{&SHCpu::FLOAT               , 0xf0ff, 0xf02d},
+	{&SHCpu::FLDS                , 0xf0ff, 0xf01d},
+	{&SHCpu::FNEG                , 0xf0ff, 0xf04d},
+	{&SHCpu::FSQRT               , 0xf0ff, 0xf06d},
+	{&SHCpu::FCNVDS              , 0xf0ff, 0xf0bd},
+	{&SHCpu::FCNVSD              , 0xf0ff, 0xf0ad},
+	{&SHCpu::FTRC                , 0xf0ff, 0xf03d},
+	{&SHCpu::FSTS                , 0xf0ff, 0xf00d},
+	{&SHCpu::FSRRA               , 0xf0ff, 0xf07d},
+	{&SHCpu::CLRMAC              , 0xffff, 0x0028},
+	{&SHCpu::CLRS                , 0xffff, 0x0048},
+	{&SHCpu::CLRT                , 0xffff, 0x0008},
+	{&SHCpu::DIV0U               , 0xffff, 0x0019},
+	{&SHCpu::NOP                 , 0xffff, 0x0009},
+	{&SHCpu::RTE                 , 0xffff, 0x002b},
+	{&SHCpu::RTS                 , 0xffff, 0x000b},
+	{&SHCpu::SETS                , 0xffff, 0x0058},
+	{&SHCpu::SETT                , 0xffff, 0x0018},
+	{&SHCpu::LDTLB               , 0xffff, 0x0038},
+	{&SHCpu::SLEEP               , 0xffff, 0x001b},
+	{&SHCpu::FSCA                , 0xf1ff, 0xf0fd},	// XXX: is this correct ???
+	{&SHCpu::FTRV                , 0xf3ff, 0xf1fd},
+	{&SHCpu::FRCHG               , 0xffff, 0xfbfd},
+	{&SHCpu::FSCHG               , 0xffff, 0xf3fd},
+	{&SHCpu::dispatchSwirlyHook  , 0xffff, 0xfffd}	// last entry
+};
+
 
 SHCpu::SHCpu()
 {
@@ -51,7 +270,7 @@ SHCpu::~SHCpu()
 // i.e. the GDROM - I don't know the proper hardware interface
 // to it, but we can simulate it through faked syscalls.
 // Obviously, this is not present on a real DC.
-void SHCpu::dispatchSwirlyHook()
+void SHCpu::dispatchSwirlyHook(Word op)
 {
 	Word hookId = mmu->fetchInstruction(PC+2);
 	/*
@@ -87,14 +306,16 @@ void SHCpu::dispatchSwirlyHook()
 	PC+=4;
 }
 
-void SHCpu::unknownOpcode()
+void SHCpu::unknownOpcode(Word op)
 {
 	debugger->print("SHCpu: encountered unknown upcode at PC=%08X\n", PC);
+	exception(E_GENERAL_ILLEGAL_INSTRUCTION, PC, op, "Offending opcode");
 	PC+=2;
 }
 
-void SHCpu:: XTRCT(int m, int n)
+void SHCpu:: XTRCT(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword t;
 	t=(R[m]<<16)&0xffff0000;
 	R[n]=(R[n]>>16)&0xffff;
@@ -102,66 +323,69 @@ void SHCpu:: XTRCT(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: XORI(Byte i)
+void SHCpu:: XORI(Word op)
 {
-	R[0]^=(i&0xff);
+	R[0]^=(op&0xff);
 	PC+=2;
 }
 
-void SHCpu:: XORM(Byte i)
+void SHCpu:: XORM(Word op)
 {
 	Dword t;
 	t=mmu->readByte(GBR+R[0]);
-	t^=(i&0xff);
+	t^=(op&0xff);
 	mmu->writeByte(GBR+R[0], t);
 	PC+=2;
 }
 
-void SHCpu:: XOR(int m, int n)
+void SHCpu:: XOR(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n]^=R[m];
 	PC+=2;
 }
 
-void SHCpu:: TST(int m, int n)
+void SHCpu:: TST(Word op)
 {
+	int m = getM(op), n = getN(op);
 	if((R[n]&R[m])==0)T=1;
 	else T=0;
 	PC+=2;
 }
 
-void SHCpu:: TSTI(Byte i)
+void SHCpu:: TSTI(Word op)
 {
 	Dword t;
-	t=R[0]&(0xff&i);
+	t=R[0]&(0xff&op);
 	if(t==0)T=1;
 	else T=0;
 	PC+=2;
 }
 
-void SHCpu:: TSTM(Byte i)
+void SHCpu:: TSTM(Word op)
 {
 	Dword t;
 	t=mmu->readByte(GBR+R[0]);
-	t&=(i&0xff);
+	t&=(op&0xff);
 	if(t==0)T=1;
 	else T=0;
 	PC+=2;
 }
 
-void SHCpu:: TRAPA(Byte i)
+void SHCpu:: TRAPA(Word op)
 {
     /* TODO: this gets uncommented when we do exceptions*/
-	SSR=SR;
+    SSR=SR;
 	SPC=PC+2;
 	setSR(SR|F_SR_MD|F_SR_BL|F_SR_RB);
-	mmu->writeDword(0xff000000|TRA, (i&0xff)<<2);
+	mmu->writeDword(0xff000000|TRA, (op&0xff)<<2);
 	mmu->writeDword(0xff000000|EXPEVT, 0x160);
 	PC=VBR+0x100;
 }
 
-void SHCpu:: TAS(int n)
+void SHCpu:: TAS(Word op)
 {
+	int n = getN(op);
 	Sdword t, oldt;
 	oldt=t=(Sdword)mmu->readByte(R[n]);
 	t|=0x80;
@@ -170,8 +394,9 @@ void SHCpu:: TAS(int n)
 	PC+=2;
 }
 
-void SHCpu:: SWAPW(int m, int n)
+void SHCpu:: SWAPW(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword t;
 	t=(R[m]>>16)&0xffff;
 	R[n]=R[m]<<16;
@@ -179,8 +404,9 @@ void SHCpu:: SWAPW(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: SWAPB(int m, int n)
+void SHCpu:: SWAPB(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword t0, t1;
 	t0=R[m]&0xffff0000;
 	t1=(R[m]&0xff)<<8;
@@ -189,9 +415,9 @@ void SHCpu:: SWAPB(int m, int n)
 	PC+=2;
 }
 
-
-void SHCpu:: SUBV(int m, int n)
+void SHCpu:: SUBV(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Sdword d,s,a;
 	if((Sdword)R[n]>=0)d=0;else d=1;
 	if((Sdword)R[m]>=0)s=0; else s=1;
@@ -203,8 +429,9 @@ void SHCpu:: SUBV(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: SUBC(int m, int n)
+void SHCpu:: SUBC(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword t0, t1;
 	t1=R[n]-R[m];
 	t0=R[n];
@@ -214,190 +441,218 @@ void SHCpu:: SUBC(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: SUB(int m, int n)
+void SHCpu:: SUB(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n]-=R[m];
 	PC+=2;
 }
 
-void SHCpu:: STSMACH(int n)
+void SHCpu:: STSMACH(Word op)
 {
+	int n = getN(op);
 	R[n]=MACH;
 	PC+=2;
 }
 
-void SHCpu:: STSMACL(int n)
+void SHCpu:: STSMACL(Word op)
 {
+	int n = getN(op);
 	R[n]=MACL;
 	PC+=2;
 }
 
-void SHCpu:: STSPR(int n)
+void SHCpu:: STSPR(Word op)
 {
+	int n = getN(op);
 	R[n]=PR;
 	PC+=2;
 }
 
-void SHCpu:: STSMMACH(int n)
+void SHCpu:: STSMMACH(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, MACH);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STSMMACL(int n)
+void SHCpu:: STSMMACL(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, MACL);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STSMPR(int n)
+void SHCpu:: STSMPR(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, PR);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu::STSFPSCR(int n)
+void SHCpu::STSFPSCR(Word op)
 {
+	int n = getN(op);
 	R[n] = FPSCR & 0x003fffff;
 	PC+=2;
 }
 
-void SHCpu::STSFPUL(int n)
+void SHCpu::STSFPUL(Word op)
 {
+	int n = getN(op);
 	R[n] = FPUL;
 	PC+=2;
 }
 
-void SHCpu::STSMFPSCR(int n)
+void SHCpu::STSMFPSCR(Word op)
 {
+	int n = getN(op);
 	R[n]-=4;
 	mmu->writeDword(R[n], FPSCR & 0x003fffff);
 	PC+=2;
 }
 
-void SHCpu:: STSMFPUL(int n)
+void SHCpu:: STSMFPUL(Word op)
 {
+	int n = getN(op);
 	R[n]-=4;
 	mmu->writeDword(R[n], FPUL);
 	PC+=2;
 }
 
-void SHCpu:: STCSR(int n) // privileged
+void SHCpu:: STCSR(Word op) // privileged
 {
+	int n = getN(op);
 	R[n]=SR;
 	PC+=2;
 }
 
-void SHCpu:: STCGBR(int n)
+void SHCpu:: STCGBR(Word op)
 {
+	int n = getN(op);
 	R[n]=GBR;
 	PC+=2;
 }
 
-void SHCpu:: STCVBR(int n)
+void SHCpu:: STCVBR(Word op)
 {
+	int n = getN(op);
 	R[n]=VBR;
 	PC+=2;
 }
 
-void SHCpu:: STCSSR(int n)
+void SHCpu:: STCSSR(Word op)
 {
+	int n = getN(op);
 	R[n]=SSR;
 	PC+=2;
 }
 
-void SHCpu:: STCSPC(int n)
+void SHCpu:: STCSPC(Word op)
 {
+	int n = getN(op);
 	R[n]=SPC;
 	PC+=2;
 }
 
-void SHCpu:: STCSGR(int n)
+void SHCpu:: STCSGR(Word op)
 {
+	int n = getN(op);
 	R[n]=SGR;
 	PC+=2;
 }
 
 
-void SHCpu:: STCDBR(int n)
+void SHCpu:: STCDBR(Word op)
 {
+	int n = getN(op);
 	R[n]=DBR;
 	PC+=2;
 }
 
-void SHCpu:: STCRBANK(int m, int n)
+void SHCpu:: STCRBANK(Word op)
 {
+	int m = getM(op)&0x7, n = getN(op);
 	R[n]=RBANK[m];
 	PC+=2;
 }
 
-void SHCpu:: STCMSR(int n)
+void SHCpu:: STCMSR(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, SR);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STCMGBR(int n)
+void SHCpu:: STCMGBR(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, GBR);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STCMVBR(int n)
+void SHCpu:: STCMVBR(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, VBR);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STCMSSR(int n)
+void SHCpu:: STCMSSR(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, SSR);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STCMSPC(int n)
+void SHCpu:: STCMSPC(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, SPC);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STCMSGR(int n)
+void SHCpu:: STCMSGR(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, SGR);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STCMDBR(int n)
+void SHCpu:: STCMDBR(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n]-4, DBR);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: STCMRBANK(int m, int n)
+void SHCpu:: STCMRBANK(Word op)
 {
+	int m = getM(op)&0x7, n = getN(op);
 	mmu->writeDword(R[n]-4, RBANK[m]);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: SLEEP()
+void SHCpu:: SLEEP(Word op)
 {
 	// TODO: make this do something
 	PC+=2;
 }
 
-void SHCpu:: SHLR(int n)
+void SHCpu:: SHLR(Word op)
 {
+	int n = getN(op);
 	if((R[n]&1)==0) T=0;
 	else T=1;
 	R[n]>>=1;
@@ -405,51 +660,59 @@ void SHCpu:: SHLR(int n)
 	PC+=2;
 }
 
-void SHCpu:: SHLR16(int n)
+void SHCpu:: SHLR16(Word op)
 {
+	int n = getN(op);
 	R[n]>>=16;
 	PC+=2;
 }
 
-void SHCpu:: SHLR8(int n)
+void SHCpu:: SHLR8(Word op)
 {
+	int n = getN(op);
 	R[n]>>=8;
 	PC+=2;
 }
 
-void SHCpu:: SHLR2(int n)
+void SHCpu:: SHLR2(Word op)
 {
+	int n = getN(op);
 	R[n]>>=2;
 	PC+=2;
 }
 
-void SHCpu:: SHLL16(int n)
+void SHCpu:: SHLL16(Word op)
 {
+	int n = getN(op);
 	R[n]<<=16;
 	PC+=2;
 }
 
-void SHCpu:: SHLL8(int n)
+void SHCpu:: SHLL8(Word op)
 {
+	int n = getN(op);
 	R[n]<<=8;
 	PC+=2;
 }
 
-void SHCpu:: SHLL2(int n)
+void SHCpu:: SHLL2(Word op)
 {
+	int n = getN(op);
 	R[n]<<=2;
 	PC+=2;
 }
 
-void SHCpu:: SHLL(int n)
+void SHCpu:: SHLL(Word op)
 {
+	int n = getN(op);
 	if((R[n]&0x80000000)==0) T=0; else T=1;
 	R[n]<<=1;
 	PC+=2;
 }
 
-void SHCpu:: SHLD(int m, int n)
+void SHCpu:: SHLD(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Sdword s;
 	
 	s = R[m]&0x80000000;
@@ -462,8 +725,9 @@ void SHCpu:: SHLD(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: SHAR(int n)
+void SHCpu:: SHAR(Word op)
 {
+	int n = getN(op);
 	Dword t;
 	if((R[n]&1)==0)T=0;else T=1;
 	if((R[n]&0x80000000)==0)t=0; else t=1;
@@ -473,16 +737,18 @@ void SHCpu:: SHAR(int n)
 	PC+=2;
 }
 
-void SHCpu:: SHAL(int n)
+void SHCpu:: SHAL(Word op)
 {
+	int n = getN(op);
 	if((R[n] & 0x80000000) == 0) T=0;
 	else T=1;
 	R[n] <<=1;
 	PC+=2;
 }
 
-void SHCpu:: SHAD(int m, int n)
+void SHCpu:: SHAD(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Sdword s;
 	s=R[m]&0x80000000;
 	if(s==0)
@@ -499,26 +765,26 @@ void SHCpu:: SHAD(int m, int n)
 	PC+=2;
 }		
 
-void SHCpu:: SETT()
+void SHCpu:: SETT(Word op)
 {
 	T=1;
 	PC+=2;
 }
 
-void SHCpu:: SETS()
+void SHCpu:: SETS(Word op)
 {
 	S=1;
 	PC+=2;
 }
 
-void SHCpu:: RTS()
+void SHCpu:: RTS(Word op)
 {
 	delaySlot();
 	debugger->reportBranch("rts", PC, PR);
 	PC=PR;
 }	
 
-void SHCpu:: RTE() // privileged
+void SHCpu:: RTE(Word op) // privileged
 {
 	delaySlot();
 	setSR(SSR);
@@ -526,8 +792,9 @@ void SHCpu:: RTE() // privileged
 	PC=SPC;
 }
 
-void SHCpu:: ROTR(int n)
+void SHCpu:: ROTR(Word op)
 {
+	int n = getN(op);
 	if((R[n]&1)==0)T=0;
 	else T=1;
 	R[n]>>=1;
@@ -536,8 +803,9 @@ void SHCpu:: ROTR(int n)
 	PC+=2;
 }
 
-void SHCpu:: ROTL(int n)
+void SHCpu:: ROTL(Word op)
 {
+	int n = getN(op);
 	if((R[n]&0x80000000)==0)T=0;else T=1;
 	R[n]<<=1;
 	if(T==1)R[n]|=1;
@@ -545,8 +813,9 @@ void SHCpu:: ROTL(int n)
 	PC+=2;
 }
 
-void SHCpu:: ROTCR(int n)
+void SHCpu:: ROTCR(Word op)
 {
+	int n = getN(op);
 	Dword t;
 	if((R[n]&1)==0)t=0;
 	else t=1;
@@ -557,8 +826,9 @@ void SHCpu:: ROTCR(int n)
 	PC+=2;
 }
 
-void SHCpu:: ROTCL(int n)
+void SHCpu:: ROTCL(Word op)
 {
+	int n = getN(op);
 	Dword t;
 	if((R[n]&0x80000000)==0)t=0;else t=1;
 	R[n]<<=1;
@@ -568,62 +838,69 @@ void SHCpu:: ROTCL(int n)
 	PC+=2;
 }
 
-void SHCpu:: PREF(int n)
+void SHCpu:: PREF(Word op)
 {
+	int n = getN(op);
 	if((R[n] & 0xfc000000) == 0xe0000000) // is this a store queue write?
 		mmu->storeQueueSend(R[n]);
 	PC+=2;
 }
 
-void SHCpu:: OR(int m, int n)
+void SHCpu:: OR(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n] |= R[m];
 	PC+=2;
 }
 
-void SHCpu:: ORI(Byte i)
+void SHCpu:: ORI(Word op)
 {
-	R[0] |= (Dword) i;
+	R[0] |= (Dword) (Byte) (op&0xff);
 	PC+=2;
 }
 
-void SHCpu:: ORM(Byte i)
+void SHCpu:: ORM(Word op)
 {
-	mmu->writeByte(GBR+R[0], ((Dword) mmu->readByte(R[0]+GBR)) | (Dword) i);
+	mmu->writeByte(GBR+R[0], ((Dword) mmu->readByte(R[0]+GBR)) | (Dword) (Byte) (op&0xff));
 	PC+=2;
 }
 
-void SHCpu:: OCBWB(int n)
+void SHCpu:: OCBWB(Word op)
 {
+	int n = getN(op);
 	// XXX: should this do something?
 	PC+=2;
 }
 
-void SHCpu:: OCBP(int n)
+void SHCpu:: OCBP(Word op)
 {
+	int n = getN(op);
 	// XXX: should this do something?
 	PC+=2;
 }
 
-void SHCpu:: OCBI(int n)
+void SHCpu:: OCBI(Word op)
 {
+	int n = getN(op);
 	// XXX: should this do something?
 	PC+=2;
 }
 
-void SHCpu:: NOT(int m, int n)
+void SHCpu:: NOT(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n]= ~R[m];
 	PC+=2;
 }
 
-void SHCpu:: NOP()
+void SHCpu:: NOP(Word op)
 {
 	PC+=2;
 }
 
-void SHCpu:: NEGC(int m, int n)
+void SHCpu:: NEGC(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword temp;
 	temp=0-R[m];
 	R[n]=temp - T;
@@ -636,293 +913,326 @@ void SHCpu:: NEGC(int m, int n)
 	PC+=2;
 }	
 
-void SHCpu:: NEG(int m, int n)
+void SHCpu:: NEG(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n]=0-R[m];
 	PC+=2;
 }
 
-void SHCpu:: MULU(int m, int n)
+void SHCpu:: MULU(Word op)
 {
+	int m = getM(op), n = getN(op);
 	MACL=((Dword)(Word)R[n]*(Dword)(Word)R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MULS(int m, int n)
+void SHCpu:: MULS(Word op)
 {
+	int m = getM(op), n = getN(op);
 	MACL=((Sdword)(Sword)R[n]*(Sdword)(Sword)R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MULL(int m, int n)
+void SHCpu:: MULL(Word op)
 {
+	int m = getM(op), n = getN(op);
 	MACL=R[m]*R[n];
 	PC+=2;
 }
 
-void SHCpu:: MOVT(int n)
+void SHCpu:: MOVT(Word op)
 {
+	int n = getN(op);
 	R[n]=(SR&1);
 	PC+=2;
 }
 
-void SHCpu:: MOVCAL(int n)
+void SHCpu:: MOVCAL(Word op)
 {
+	int n = getN(op);
 	mmu->writeDword(R[n], R[0]);
 	PC+=2;
 }
 
-void SHCpu:: MOVA(Byte d)
+void SHCpu:: MOVA(Word op)
 {
 	Dword dest;
-	dest = ((d&0xff)<<2)+4+(PC&0xfffffffc);
+	dest = ((op&0xff)<<2)+4+(PC&0xfffffffc);
 	R[0]=dest;
 	PC+=2;
 }
 
-void SHCpu:: MOVBS4(Byte d, int n)
+void SHCpu:: MOVBS4(Word op)
 {
+	int n = getM(op);
 	Dword dest;
-	dest=(d&0xf)+R[n];
+	dest=(op&0xf)+R[n];
 	mmu->writeByte(dest, R[0]);
 	PC+=2;
 }
 
-void SHCpu:: MOVWS4(Byte d, int n)
+void SHCpu:: MOVWS4(Word op)
 {
+	int n = getM(op);
 	Dword dest;
-	dest=((d&0xf)<<1)+R[n];
+	dest=((op&0xf)<<1)+R[n];
 	mmu->writeWord(dest, R[0]);
 	PC+=2;
 }
 
-void SHCpu:: MOVLS4(int m, Byte d, int n)
+void SHCpu:: MOVLS4(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword dest;
-	dest=((d&0xf)<<2)+R[n];
+	dest=((op&0xf)<<2)+R[n];
 	mmu->writeDword(dest, R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVBL4(int m, Byte d)
+void SHCpu:: MOVBL4(Word op)
 {
+	int m = getM(op);
 	Dword dest;
-	dest = (d&0xf)+R[m];
+	dest = (op&0xf)+R[m];
 	R[0] = (Sdword) (Sbyte) mmu->readByte(dest);
 	PC+=2;
 }
 
-void SHCpu:: MOVWL4(int m, Byte d)
+void SHCpu:: MOVWL4(Word op)
 {
+	int m = getM(op);
 	Dword dest;
-	dest = ((d&0xf)<<1)+R[m];
+	dest = ((op&0xf)<<1)+R[m];
 	R[0] = (Sdword) (Sword) mmu->readWord(dest);
 	PC+=2;
 }
 
-void SHCpu:: MOVLL4(int m, Byte d, int n)
+void SHCpu:: MOVLL4(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword dest;
-	dest=((d&0xf)<<2)+R[m];
+	dest=((op&0xf)<<2)+R[m];
 	R[n]=mmu->readDword(dest);
 	PC+=2;
 }
 	
 
-void SHCpu:: MOVBLG(Byte d)
+void SHCpu:: MOVBLG(Word op)
 {
 	Dword dest;
-	dest = (Dword)(d&0xff)+GBR;
+	dest = (Dword)(op&0xff)+GBR;
 	R[0]=(Sdword)(Sbyte)mmu->readByte(dest);
 	PC+=2;
 }
 
-void SHCpu:: MOVWLG(Byte d)
+void SHCpu:: MOVWLG(Word op)
 {
 	Dword dest;
-	dest = ((Dword)(d&0xff)<<1)+GBR;
+	dest = ((Dword)(op&0xff)<<1)+GBR;
 	R[0]=(Sdword)(Sword)mmu->readWord(dest);
 	PC+=2;
 }
 
-void SHCpu:: MOVLLG(Byte d)
+void SHCpu:: MOVLLG(Word op)
 {
 	Dword dest;
-	dest=((Dword)(d&0xff)<<2)+GBR;
+	dest=((Dword)(op&0xff)<<2)+GBR;
 	R[0]=mmu->readDword(dest);
 	PC+=2;
 }
 
-void SHCpu:: MOVBSG(Byte d)
+void SHCpu:: MOVBSG(Word op)
 {
 	Dword dest;
-	dest = (Dword)(d&0xff)+GBR;
+	dest = (Dword)(op&0xff)+GBR;
 	mmu->writeByte(dest, (Byte)R[0]);
 	PC+=2;
 }
 
-void SHCpu:: MOVWSG(Byte d)
+void SHCpu:: MOVWSG(Word op)
 {
 	Dword dest;
-	dest = ((Dword)(d&0xff)<<1)+GBR;
+	dest = ((Dword)(op&0xff)<<1)+GBR;
 	mmu->writeWord(dest, (Word)R[0]);
 	PC+=2;
 }
 
-void SHCpu:: MOVLSG(Byte d)
+void SHCpu:: MOVLSG(Word op)
 {
 	Dword dest;
-	dest = ((Dword)(d&0xff)<<2)+GBR;
+	dest = ((Dword)(op&0xff)<<2)+GBR;
 	mmu->writeDword(dest, R[0]);
 	PC+=2;
 }
 
-void SHCpu:: MOVI(Byte i, int n)
+void SHCpu:: MOVI(Word op)
 {
-	R[n] = (Sdword) (Sbyte) i;
+	int n = getN(op);
+	R[n] = (Sdword) (Sbyte) (op & 0xff);
 	PC+=2;
 }
 
-void SHCpu:: MOVWI(Byte d, int n)
+void SHCpu:: MOVWI(Word op)
 {
+	int n = getN(op);
 	Dword dest;
-	
-	dest = (((Dword)(d&0xff)) << 1)+4+PC;
+	dest = (((Dword)(op&0xff)) << 1)+4+PC;
 	R[n]=(Sdword) (Sword) mmu->readWord(dest);
 	PC+=2;
 }
 
-void SHCpu:: MOVLI(Byte d, int n)
+void SHCpu:: MOVLI(Word op)
 {
+	int n = getN(op);
 	Dword dest;
-	
-	dest = (((Dword)(d&0xff)) << 2)+4+(PC&0xfffffffc);
+	dest = (((Dword)(op&0xff)) << 2)+4+(PC&0xfffffffc);
 	R[n]=mmu->readDword(dest);
 	PC+=2;
 }
 
-void SHCpu:: MOV(int m, int n)
+void SHCpu:: MOV(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n]=R[m];
 	PC+=2;
 }
 
-void SHCpu:: MOVBS(int m, int n) // mov.b Rm, @Rn
+void SHCpu:: MOVBS(Word op) // mov.b Rm, @Rn
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeByte(R[n], (Byte)R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVWS(int m, int n)
+void SHCpu:: MOVWS(Word op)
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeWord(R[n], (Word)R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVLS(int m, int n)
+void SHCpu:: MOVLS(Word op)
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeDword(R[n], R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVBL(int m, int n) // mov.b @Rm, Rn
+void SHCpu:: MOVBL(Word op) // mov.b @Rm, Rn
 {
+	int m = getM(op), n = getN(op);
 	R[n]=(Sdword) (Sbyte) mmu->readByte(R[m]); // sign-extend
 	PC+=2;
 }
 
-void SHCpu:: MOVWL(int m, int n) // mov.w @Rm, Rn
+void SHCpu:: MOVWL(Word op) // mov.w @Rm, Rn
 {
+	int m = getM(op), n = getN(op);
 	R[n]=(Sdword) (Sword) mmu->readWord(R[m]); // sign-extend
 	PC+=2;
 }
 
-void SHCpu:: MOVLL(int m, int n) // mov.l @Rm, Rn
+void SHCpu:: MOVLL(Word op) // mov.l @Rm, Rn
 {
+	int m = getM(op), n = getN(op);
 	R[n]= mmu->readDword(R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVBM(int m, int n) // mov.b Rm, @-Rn
+void SHCpu:: MOVBM(Word op) // mov.b Rm, @-Rn
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeByte(R[n]-1, (Byte) R[m]);
 	R[n]--;
 	PC+=2;
 }
 
-void SHCpu:: MOVWM(int m, int n)
+void SHCpu:: MOVWM(Word op)
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeWord(R[n]-2, (Word) R[m]);
 	R[n]-=2;
 	PC+=2;
 }
 
-void SHCpu:: MOVLM(int m, int n)
+void SHCpu:: MOVLM(Word op)
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeDword(R[n]-4, R[m]);
 	R[n]-=4;
 	PC+=2;
 }
 
-void SHCpu:: MOVBP(int m, int n) // mov.b @Rm+, Rn
+void SHCpu:: MOVBP(Word op) // mov.b @Rm+, Rn
 {
+	int m = getM(op), n = getN(op);
 	R[n]=(Sdword) (Sbyte) mmu->readByte(R[m]); // sign-extend
 	if(n!=m) R[m]++;
 	PC+=2;
 }
 
-void SHCpu:: MOVWP(int m, int n) // mov.w @Rm+, Rn
+void SHCpu:: MOVWP(Word op) // mov.w @Rm+, Rn
 {
+	int m = getM(op), n = getN(op);
 	R[n]=(Sdword) (Sword) mmu->readWord(R[m]); // sign-extend
 	if(n!=m) R[m]+=2;
 	PC+=2;
 }
 
-void SHCpu:: MOVLP(int m, int n) // mov.l @Rm+, Rn
+void SHCpu:: MOVLP(Word op) // mov.l @Rm+, Rn
 {
+	int m = getM(op), n = getN(op);
 	R[n]= mmu->readDword(R[m]);
 	if(n!=m) R[m]+=4;
 	PC+=2;
 }
 
-void SHCpu:: MOVBS0(int m, int n) // mov.b Rm, @(r0, Rn)
+void SHCpu:: MOVBS0(Word op) // mov.b Rm, @(r0, Rn)
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeByte(R[n]+R[0], R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVWS0(int m, int n) // mov.w Rm, @(r0, Rn)
+void SHCpu:: MOVWS0(Word op) // mov.w Rm, @(r0, Rn)
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeWord(R[n]+R[0], R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVLS0(int m, int n) // mov.l Rm, @(r0, Rn)
+void SHCpu:: MOVLS0(Word op) // mov.l Rm, @(r0, Rn)
 {
+	int m = getM(op), n = getN(op);
 	mmu->writeDword(R[n]+R[0], R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVBL0(int m, int n) // mov.b @(r0, rm), rn
+void SHCpu:: MOVBL0(Word op) // mov.b @(r0, rm), rn
 {
+	int m = getM(op), n = getN(op);
 	R[n] = (Sdword) (Sbyte) mmu->readByte(R[0]+R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVWL0(int m, int n) // mov.w @(r0, rm), rn
+void SHCpu:: MOVWL0(Word op) // mov.w @(r0, rm), rn
 {
+	int m = getM(op), n = getN(op);
 	R[n] = (Sdword) (Sword) mmu->readWord(R[0]+R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MOVLL0(int m, int n) // mov.l @(r0, rm), rn
+void SHCpu:: MOVLL0(Word op) // mov.l @(r0, rm), rn
 {
+	int m = getM(op), n = getN(op);
 	R[n] = mmu->readDword(R[0]+R[m]);
 	PC+=2;
 }
 
-void SHCpu:: MACW(int m, int n)
+void SHCpu:: MACW(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Sdword tm, tn, d,s,a;
 	Dword t1;
 	tn=(Sdword)mmu->readWord(R[n]);
@@ -953,8 +1263,9 @@ void SHCpu:: MACW(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: DO_MACL(int m, int n)
+void SHCpu:: DO_MACL(Word op)
 {
+	int m = getM(op), n = getN(op);
 /*
 	Dword rnl, rnh, rml, rmh, r0, r1, r2, t0, t1, t2, t3;
 	Sdword tm, tn, fnlml;
@@ -1021,7 +1332,7 @@ void SHCpu:: DO_MACL(int m, int n)
 	*/
 
 	debugger->flamingDeath("Untested MACL implementation invoked");
-	shcpu_DO_MACL(R[n], R[m], &MACH, &MACL);
+//	shcpu_DO_MACL(R[n], R[m], &MACH, &MACL);
 
 	if(S==1)
 	{
@@ -1043,180 +1354,205 @@ void SHCpu:: DO_MACL(int m, int n)
 	PC+=2;
 }
 
-
-void SHCpu:: LDSFPSCR(int n)
+void SHCpu:: LDSFPSCR(Word op)
 {
+	int n = getN(op);
 	setFPSCR(R[n] & 0x003fffff);
 	PC+=2;
 }
 
-void SHCpu::LDSMFPSCR(int n)
+void SHCpu::LDSMFPSCR(Word op)
 {
+	int n = getN(op);
 	setFPSCR(mmu->readDword(R[n]) & 0x003fffff);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu::LDSFPUL(int n)
+void SHCpu::LDSFPUL(Word op)
 {
+	int n = getN(op);
 	FPUL = R[n];
 	PC+=2;	
 }
 
-void SHCpu::LDSMFPUL(int n)
+void SHCpu::LDSMFPUL(Word op)
 {
+	int n = getN(op);
 	FPUL = mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDSMPR(int n)
+void SHCpu:: LDSMPR(Word op)
 {
+	int n = getN(op);
 	PR=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDSMMACL(int n)
+void SHCpu:: LDSMMACL(Word op)
 {
+	int n = getN(op);
 	MACL=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDSMMACH(int n)
+void SHCpu:: LDSMMACH(Word op)
 {
+	int n = getN(op);
 	MACH=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDSPR(int n)
+void SHCpu:: LDSPR(Word op)
 {
+	int n = getN(op);
 	PR=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDSMACL(int n)
+void SHCpu:: LDSMACL(Word op)
 {
+	int n = getN(op);
 	MACL=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDSMACH(int n)
+void SHCpu:: LDSMACH(Word op)
 {
+	int n = getN(op);
 	MACH=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDCSR(int n) // privileged
+void SHCpu:: LDCSR(Word op) // privileged
 {
+	int n = getN(op);
 	setSR(R[n]&0x700083f3);
 	PC+=2;
 }
 
-void SHCpu:: LDCGBR(int n)
+void SHCpu:: LDCGBR(Word op)
 {
+	int n = getN(op);
 	GBR=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDCVBR(int n) // privileged
+void SHCpu:: LDCVBR(Word op) // privileged
 {
+	int n = getN(op);
 	VBR=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDCSSR(int n) // privileged
+void SHCpu:: LDCSSR(Word op) // privileged
 {
+	int n = getN(op);
 	SSR=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDCSPC(int n) // privileged
+void SHCpu:: LDCSPC(Word op) // privileged
 {
+	int n = getN(op);
 	SPC=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDCDBR(int n) // privileged
+void SHCpu:: LDCDBR(Word op) // privileged
 {
+	int n = getN(op);
 	DBR=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDCRBANK(int m, int n) // privileged
+void SHCpu:: LDCRBANK(Word op) // privileged
 {
+	int m = getM(op)&0x7, n = getN(op);
 	// n = source, m = dest
 	RBANK[m]=R[n];
 	PC+=2;
 }
 
-void SHCpu:: LDCMRBANK(int m, int n) // privileged
+void SHCpu:: LDCMRBANK(Word op) // privileged
 {
+	int m = getM(op)&0x7, n = getN(op);
 	// n = source, m = dest
 	RBANK[m]=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDCMSR(int n)
+void SHCpu:: LDCMSR(Word op)
 {
+	int n = getN(op);
 	setSR(mmu->readDword(R[n])&0x700083f3);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDCMGBR(int n)
+void SHCpu:: LDCMGBR(Word op)
 {
+	int n = getN(op);
 	GBR=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDCMVBR(int n)
+void SHCpu:: LDCMVBR(Word op)
 {
+	int n = getN(op);
 	VBR=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
 
-void SHCpu:: LDCMSSR(int n)
+void SHCpu:: LDCMSSR(Word op)
 {
+	int n = getN(op);
 	SSR=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDCMSPC(int n)
+void SHCpu:: LDCMSPC(Word op)
 {
+	int n = getN(op);
 	SPC=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: LDCMDBR(int n)
+void SHCpu:: LDCMDBR(Word op)
 {
+	int n = getN(op);
 	DBR=mmu->readDword(R[n]);
 	R[n]+=4;
 	PC+=2;
 }
 
-void SHCpu:: JSR(int n)
+void SHCpu:: JSR(Word op)
 {
+	int n = getN(op);
 	Dword temp, oldpc;
 	temp = R[n];
 	oldpc = PC;
 	delaySlot();
 	PR=oldpc+4;
-	
+
 	debugger->reportBranch("jsr", PC, temp);
 	PC=temp;
 }
 
-void SHCpu:: JMP(int n)
+void SHCpu:: JMP(Word op)
 {
+	int n = getN(op);
 	Dword temp;
 	temp = R[n];
 	delaySlot();
@@ -1225,8 +1561,9 @@ void SHCpu:: JMP(int n)
 	PC=temp;
 }	
 
-void SHCpu:: DMULU(int m, int n)
+void SHCpu:: DMULU(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword rnl, rnh, rml, rmh, r0, r1, r2, t0, t1, t2, t3;
 	rnl=R[n]&0xffff;
 	rnh=(R[n]>>16)&0xffff;
@@ -1248,32 +1585,37 @@ void SHCpu:: DMULU(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: EXTUW(int m, int n)
+void SHCpu:: EXTUW(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n] = R[m] & 0xffff;
 	PC+=2;
 }
 
-void SHCpu:: EXTUB(int m, int n)
+void SHCpu:: EXTUB(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n] = R[m] & 0xff;
 	PC+=2;
 }
 
-void SHCpu:: EXTSB(int m, int n)
+void SHCpu:: EXTSB(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n]=	((R[m]&0x80)==0) ? R[m]&0xff : R[m] | 0xffffff00;
 	PC+=2;
 }
 
-void SHCpu:: EXTSW(int m, int n)
+void SHCpu:: EXTSW(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n]=	((R[m]&0x8000)==0) ? R[m]&0xffff : R[m] | 0xffff0000;
 	PC+=2;
 }
 
-void SHCpu:: DT(int n)
+void SHCpu:: DT(Word op)
 {
+	int n = getN(op);
 	R[n]--;
 	if(R[n]==0)
 		T=1;
@@ -1282,8 +1624,9 @@ void SHCpu:: DT(int n)
 	PC+=2;
 }
 
-void SHCpu:: DMULS(int m, int n)
+void SHCpu:: DMULS(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword rnl, rnh, rml, rmh, r0, r1, r2, t0, t1, t2, t3;
 	Sdword tm, tn, fnlml;
 	
@@ -1322,8 +1665,9 @@ void SHCpu:: DMULS(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: DIV1(int m, int n)
+void SHCpu:: DIV1(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword t0, t2;
 	Byte oq, t1;
 	oq=Q;
@@ -1388,14 +1732,15 @@ void SHCpu:: DIV1(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: DIV0U()
+void SHCpu:: DIV0U(Word op)
 {
 	setSR(SR & ((~F_SR_M)&(~F_SR_Q)&(~F_SR_T)));
 	PC+=2;
 }
 
-void SHCpu:: DIV0S(int m, int n)
+void SHCpu:: DIV0S(Word op)
 {
+	int m = getM(op), n = getN(op);
 	
 	if((R[n] & 0x80000000) == 0)
 		setSR(SR & ~F_SR_Q);
@@ -1414,17 +1759,18 @@ void SHCpu:: DIV0S(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: CMPIM(Byte i)
+void SHCpu:: CMPIM(Word op)
 {
-	if((Sdword)R[0] == (Sdword)(Sbyte)i)
+	if((Sdword)R[0] == (Sdword)(Sbyte)(op&0xff))
 		setSR(SR|F_SR_T);
 	else
 		setSR(SR& ~F_SR_T);
 	PC+=2;
 }
 
-void SHCpu:: CMPSTR(int m, int n)
+void SHCpu:: CMPSTR(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword foo;
 	foo = R[m] ^ R[n];
 	if
@@ -1441,8 +1787,9 @@ void SHCpu:: CMPSTR(int m, int n)
 		setSR(SR & ~F_SR_T);		
 	PC+=2;
 }
-void SHCpu:: CMPPZ(int n)
+void SHCpu:: CMPPZ(Word op)
 {
+	int n = getN(op);
 	if((signed int)R[n] >= 0)
 		setSR(SR | F_SR_T);
 	else
@@ -1450,8 +1797,9 @@ void SHCpu:: CMPPZ(int n)
 	PC+=2;
 }
 
-void SHCpu:: CMPPL(int n)
+void SHCpu:: CMPPL(Word op)
 {
+	int n = getN(op);
 	if((signed int)R[n] > 0)
 		setSR(SR | F_SR_T);
 	else
@@ -1459,8 +1807,9 @@ void SHCpu:: CMPPL(int n)
 	PC+=2;
 }
 
-void SHCpu:: CMPHS(int m, int n)
+void SHCpu:: CMPHS(Word op)
 {
+	int m = getM(op), n = getN(op);
 	if(R[n] >= R[m])
 		setSR(SR | F_SR_T);
 	else
@@ -1468,8 +1817,9 @@ void SHCpu:: CMPHS(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: CMPHI(int m, int n)
+void SHCpu:: CMPHI(Word op)
 {
+	int m = getM(op), n = getN(op);
 	if(R[n] > R[m])
 		setSR(SR | F_SR_T);
 	else
@@ -1477,8 +1827,9 @@ void SHCpu:: CMPHI(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: CMPGT(int m, int n)
+void SHCpu:: CMPGT(Word op)
 {
+	int m = getM(op), n = getN(op);
 	if((Sdword)R[n] > (Sdword)R[m])
 		setSR(SR | F_SR_T);
 	else
@@ -1486,8 +1837,9 @@ void SHCpu:: CMPGT(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: CMPGE(int m, int n)
+void SHCpu:: CMPGE(Word op)
 {
+	int m = getM(op), n = getN(op);
 	if((Sdword)R[n] >= (Sdword)R[m])
 		setSR(SR | F_SR_T);
 	else
@@ -1495,37 +1847,41 @@ void SHCpu:: CMPGE(int m, int n)
 	PC+=2;
 }
 
-void SHCpu:: CMPEQ(int m, int n)
+void SHCpu:: CMPEQ(Word op)
 {
+	int m = getM(op), n = getN(op);
 	if(R[n] == R[m])
-		T=1;
+		setSR(SR | F_SR_T);
+	else
+		setSR(SR & ~F_SR_T);
+/*		T=1;
 	else
 		T=0;
-	PC+=2;
+*/	PC+=2;
 }
 
-void SHCpu:: CLRT()
+void SHCpu:: CLRT(Word op)
 {
 	setSR(SR & ~F_SR_T);
 	PC+=2;
 }
 
-void SHCpu:: CLRS()
+void SHCpu:: CLRS(Word op)
 {
 	setSR(SR & ~F_SR_S);
 	PC+=2;
 }
 
-void SHCpu:: CLRMAC()
+void SHCpu:: CLRMAC(Word op)
 {
 	MACH=MACL=0;
 	PC+=2;
 }
 
-void SHCpu:: BTS(Byte d)
+void SHCpu:: BTS(Word op)
 {
 	Dword dest, oldpc;
-	dest = PC + 4 + (((Sdword) (Sbyte) d) * 2);
+	dest = PC + 4 + (((Sdword) (Sbyte) (op&0xff)) * 2);
 	oldpc = PC;
 	if((SR & F_SR_T)==1)
 	{
@@ -1540,10 +1896,10 @@ void SHCpu:: BTS(Byte d)
 	}
 }
 
-void SHCpu:: BT(Byte d) // no delay slot!
+void SHCpu:: BT(Word op) // no delay slot!
 {
 	Dword dest;
-	dest = PC + 4 + (((Sdword) (Sbyte) d) * 2);
+	dest = PC + 4 + (((Sdword) (Sbyte) (op&0xff)) * 2);
 	if((SR & F_SR_T)==1)
 	{
 		debugger->reportBranch("bt", PC, dest);
@@ -1553,8 +1909,9 @@ void SHCpu:: BT(Byte d) // no delay slot!
 		PC+=2;
 }
 
-void SHCpu:: BSRF(int n)
+void SHCpu:: BSRF(Word op)
 {
+	int n = getN(op);
 	Dword dest, oldpc;
 	dest = PC+4+(Sdword)R[n];
 	oldpc = PC;
@@ -1564,8 +1921,9 @@ void SHCpu:: BSRF(int n)
 	PC=dest;
 }
 
-void SHCpu:: BSR(Sword d)
+void SHCpu:: BSR(Word op)
 {
+	Sword d = (op&0xfff);
 	Dword dest, oldpc;
 	// must do sign-extension ourselves here because it's a
 	// 12-bit quantity
@@ -1579,8 +1937,9 @@ void SHCpu:: BSR(Sword d)
 	PC=dest;
 }
 
-void SHCpu:: BRAF(int n)
+void SHCpu:: BRAF(Word op)
 {
+	int n = getN(op);
 	Dword dest;
 	dest = PC+4+(Sdword)R[n];
 	delaySlot();
@@ -1588,8 +1947,9 @@ void SHCpu:: BRAF(int n)
 	PC=dest;
 }
 
-void SHCpu:: BRA(Sword d)
+void SHCpu:: BRA(Word op)
 {
+	Sword d = (op&0xfff);
 	Dword dest;
 	// must do sign-extension ourselves here because it's a
 	// 12-bit quantity
@@ -1601,10 +1961,10 @@ void SHCpu:: BRA(Sword d)
 	PC=dest;
 }
 
-void SHCpu:: BFS(Byte d)
+void SHCpu:: BFS(Word op)
 {
 	Dword dest, oldpc;
-	dest = PC + 4 + (((Sdword) (Sbyte) d) * 2);
+	dest = PC + 4 + (((Sdword) (Sbyte) (op&0xff)) * 2);
 	oldpc = PC;
 	if((SR & F_SR_T)==0)
 	{
@@ -1619,12 +1979,11 @@ void SHCpu:: BFS(Byte d)
 	}
 }
 
-void SHCpu:: BF(Byte d) // no delay slot!
+void SHCpu:: BF(Word op) // no delay slot!
 {
-	Dword dest;
-	dest = PC + 4 + (((Sdword) (Sbyte) d) * 2);
 	if((SR & F_SR_T)==0)
 	{
+		Dword dest = PC + 4 + (((Sdword) (Sbyte) (op&0xff)) * 2);
 		debugger->reportBranch("bf", PC, dest);
 		PC=dest;
 	}
@@ -1632,26 +1991,28 @@ void SHCpu:: BF(Byte d) // no delay slot!
 		PC+=2;
 }
 
-void SHCpu:: AND(int m, int n)
+void SHCpu:: AND(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n] &= R[m];
 	PC+=2;
 }
 
-void SHCpu:: ANDI(Byte i)
+void SHCpu:: ANDI(Word op)
 {
-	R[0] &= (Dword) i;
+	R[0] &= (Dword) (op&0xff);
 	PC+=2;
 }
 
-void SHCpu:: ANDM(Byte i) // and.b #imm, @(r0, gbr)
+void SHCpu:: ANDM(Word op) // and.b #imm, @(r0, gbr)
 {
-	mmu->writeByte(R[0]+GBR, ((Dword) i) & (Dword) mmu->readByte(R[0]+GBR));
+	mmu->writeByte(R[0]+GBR, ((Dword) (op&0xff)) & (Dword) mmu->readByte(R[0]+GBR));
 	PC+=2;
 }
 
-void SHCpu:: ADDV(int m, int n)
+void SHCpu:: ADDV(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword d=1,s=1,a=1;
 	
 	
@@ -1676,20 +2037,23 @@ void SHCpu:: ADDV(int m, int n)
 	PC+=2;
 }		
 
-void SHCpu:: ADD(int m, int n)
+void SHCpu:: ADD(Word op)
 {
+	int m = getM(op), n = getN(op);
 	R[n] += R[m];
 	PC+=2;
 }
 
-void SHCpu:: ADDI(Byte i, int n)
+void SHCpu:: ADDI(Word op)
 {
-	R[n] += (Sdword) (Sbyte) i; // sign-extend
+	int n = getN(op);
+	R[n] += (Sdword) (Sbyte) (op&0xff); // sign-extend
 	PC+=2;
 }
 
-void SHCpu:: ADDC(int m, int n)
+void SHCpu:: ADDC(Word op)
 {
+	int m = getM(op), n = getN(op);
 	Dword foo;
 	foo = R[n] + R[m] + (SR & F_SR_T);
 	// figure out carry
@@ -1701,8 +2065,9 @@ void SHCpu:: ADDC(int m, int n)
 	PC+=2;
 }
 
-void SHCpu::FABS(int n)
+void SHCpu::FABS(Word op)
 {
+	int n = getN(op);
 	FPU_DP_FIX_N();
 
 	if(FPU_DP()) // double-precision
@@ -1714,10 +2079,11 @@ void SHCpu::FABS(int n)
 	PC+=2;
 }
 
-void SHCpu::FADD(int m, int n)
+void SHCpu::FADD(Word op)
 {
+	int m = getM(op), n = getN(op);
 //	FPU_DP_FIX_MN();
-	
+
 	if(FPU_DP()) // double-precision
 	{
 		cnv_dbl tmpa, tmpb;
@@ -1736,10 +2102,11 @@ void SHCpu::FADD(int m, int n)
 	PC+=2;
 }
 
-void SHCpu::FMUL(int m, int n)
+void SHCpu::FMUL(Word op)
 {
+	int m = getM(op), n = getN(op);
 //	FPU_DP_FIX_MN();
-	
+
 	if(FPU_DP()) // double-precision
 	{
 		cnv_dbl tmpa, tmpb;
@@ -1760,7 +2127,7 @@ void SHCpu::FMUL(int m, int n)
 //		shfpu_sop1 = FR[m];
 		FR[n]*=FR[m];
 //		shfpu_sFMUL();
-		FR[n] = shfpu_sresult;
+//		FR[n] = shfpu_sresult;
 	}
 	PC+=2;
 }
@@ -1787,119 +2154,214 @@ void SHCpu::setFPSCR(Dword d)
 		this->DR = (double *) this->FPR_BANK0;
 		this->XD = (double *) this->FPR_BANK1;
 	}
-
+	
 	FR_Dwords = (Dword*)FR;
+	XF_Dwords = (Dword*)XF;
 //	shfpu_setContext(FR, XF, (float*)&FPUL, &FPSCR);
 }
 
-void SHCpu::FMOV(int m, int n)
+void SHCpu::FMOV(Word op)
 {
-	FPU_SZ_FIX_MN();
+	int m = getM(op), n = getN(op);
 
-	if(FPU_SZ())
-		DR[n]=DR[m];
+	if(FPU_SZ()) {
+		n &= 0xe; m &= 0xe;
+		// split up in different instructions
+		switch(op&0x0110) {
+		case 0x0000:	// FMOV DRm, DRn
+			FR_Dwords[n] = FR_Dwords[m];
+			FR_Dwords[n+1] = FR_Dwords[m+1];
+			break;
+		case 0x0010:	// FMOV XDm, DRn
+			FR_Dwords[n] = XF_Dwords[m];
+			FR_Dwords[n+1] = XF_Dwords[m+1];
+			break;
+		case 0x0100:	// FMOV DRm, XDn
+			XF_Dwords[n] = FR_Dwords[m];
+			XF_Dwords[n+1] = FR_Dwords[m+1];
+			break;
+		case 0x0110:	// FMOV XDm, XDn
+			XF_Dwords[n] = XF_Dwords[m];
+			XF_Dwords[n+1] = XF_Dwords[m+1];
+			break;
+		}
+	}
 	else
 		FR_Dwords[n] = FR_Dwords[m];
-		//FR[n]=FR[m];
 	PC+=2;
 }
 
-void SHCpu::FMOV_STORE(int m, int n)
+void SHCpu::FMOV_STORE(Word op)
 {
-	FPU_SZ_FIX_M();
+	int m = getM(op), n = getN(op);
 
-	if(FPU_SZ()) // double-precision
-		mmu->writeDouble(R[n], DR[m]);
-	else // single-precision
-		mmu->writeFloat(R[n], FR[m]);
-	PC+=2;
-}
-
-void SHCpu::FMOV_LOAD(int m, int n)
-{
-	FPU_SZ_FIX_N();
-
-	if(FPU_SZ()) // double-precision
-		DR[n] = mmu->readDouble(R[m]);
-	else // single-precision
-		FR[n] = mmu->readFloat(R[m]);
-	PC+=2;
-}
-
-void SHCpu::FMOV_RESTORE(int m, int n)
-{
-	FPU_SZ_FIX_N();
 	if(FPU_SZ()) // double-precision
 	{
-		DR[n] = mmu->readDouble(R[m]);
+		m &= 0xe;
+		if (op & 0x0010)
+		{
+			mmu->writeDword(R[n], XF_Dwords[m]);
+			mmu->writeDword(R[n]+4, XF_Dwords[m+1]);
+		}
+		else
+		{
+			mmu->writeDword(R[n], FR_Dwords[m]);
+			mmu->writeDword(R[n]+4, FR_Dwords[m+1]);
+		}
+	}
+	else // single-precision
+		mmu->writeDword(R[n], FR_Dwords[m]);
+	PC+=2;
+}
+
+void SHCpu::FMOV_LOAD(Word op)
+{
+	int m = getM(op), n = getN(op);
+
+	if(FPU_SZ()) // double-precision
+	{
+		n &= 0xe;
+		if (op & 0x0100)
+		{
+			XF_Dwords[n] = mmu->readDword(R[m]);
+			XF_Dwords[n+1] = mmu->readDword(R[m]+4);
+		}
+		else
+		{
+			FR_Dwords[n] = mmu->readDword(R[m]);
+			FR_Dwords[n+1] = mmu->readDword(R[m]+4);
+		}
+	}
+	else // single-precision
+		FR_Dwords[n] = mmu->readDword(R[m]);
+	PC+=2;
+}
+
+void SHCpu::FMOV_RESTORE(Word op)
+{
+	int m = getM(op), n = getN(op);
+
+	if(FPU_SZ()) // double-precision
+	{
+		n &= 0xe;
+		if (op & 0x0100)
+		{
+			XF_Dwords[n] = mmu->readDword(R[m]);
+			XF_Dwords[n+1] = mmu->readDword(R[m]+4);
+		}
+		else
+		{
+			FR_Dwords[n] = mmu->readDword(R[m]);
+			FR_Dwords[n+1] = mmu->readDword(R[m]+4);
+		}
 		R[m]+=8;
 	}
 	else // single-precision
 	{
-		FR[n] = mmu->readFloat(R[m]);
+		FR_Dwords[n] = mmu->readDword(R[m]);
 		R[m]+=4;
 	}
 	PC+=2;
 }
 
-void SHCpu::FMOV_SAVE(int m, int n)
+void SHCpu::FMOV_SAVE(Word op)
 {
-	FPU_SZ_FIX_M();
+	int m = getM(op), n = getN(op);
 
 	if(FPU_SZ()) // double-precision
 	{
 		R[n]-=8;
-		mmu->writeDouble(R[n], DR[m]);
+		m &= 0xe;
+		if (op & 0x0010)
+		{
+			mmu->writeDword(R[n], XF_Dwords[m]);
+			mmu->writeDword(R[n]+4, XF_Dwords[m+1]);
+		}
+		else
+		{
+			mmu->writeDword(R[n], FR_Dwords[m]);
+			mmu->writeDword(R[n]+4, FR_Dwords[m+1]);
+		}
 	}
 	else // single-precision
 	{
 		R[n]-=4;
-		mmu->writeFloat(R[n], FR[m]);
+		mmu->writeDword(R[n], FR_Dwords[m]);
 	}
 	PC+=2;
 }
 
-void SHCpu::FMOV_INDEX_LOAD(int m, int n)
+void SHCpu::FMOV_INDEX_LOAD(Word op)
 {
-	FPU_SZ_FIX_N();
+	int m = getM(op), n = getN(op);
 
 	if(FPU_SZ()) // double-precision
-		DR[n] = mmu->readDouble(R[m]+R[0]);
+	{
+		n &= 0xe;
+		if (op & 0x0100)
+		{
+			XF_Dwords[n] = mmu->readDword(R[m]+R[0]);
+			XF_Dwords[n+1] = mmu->readDword(R[m]+R[0]+4);
+		}
+		else
+		{
+			FR_Dwords[n] = mmu->readDword(R[m]+R[0]);
+			FR_Dwords[n+1] = mmu->readDword(R[m]+R[0]+4);
+		}
+	}
 	else // single-precision
-		FR[n] = mmu->readFloat(R[m]+R[0]);
+		FR_Dwords[n] = mmu->readDword(R[m]+R[0]);
 	PC+=2;
 }
 
-void SHCpu::FMOV_INDEX_STORE(int m, int n)
+void SHCpu::FMOV_INDEX_STORE(Word op)
 {
-	FPU_SZ_FIX_M();
+	int m = getM(op), n = getN(op);
 	
 	if(FPU_SZ()) // double-precision
-		mmu->writeDouble(R[0]+R[n], DR[m]);
+	{
+		m &= 0xe;
+		if (op & 0x0010)
+		{
+			mmu->writeDword(R[0]+R[n], XF_Dwords[m]);
+			mmu->writeDword(R[0]+R[n]+4, XF_Dwords[m+1]);
+		}
+		else
+		{
+			mmu->writeDword(R[0]+R[n], FR_Dwords[m]);
+			mmu->writeDword(R[0]+R[n]+4, FR_Dwords[m+1]);
+		}
+	}
 	else // single-precision
-		mmu->writeFloat(R[0]+R[n], FR[m]);
+		mmu->writeDword(R[0]+R[n], FR_Dwords[m]);
 	PC+=2;
 }
 
-void SHCpu::FCMPEQ(int m, int n)
+void SHCpu::FCMPEQ(Word op)
 {
+	int m = getM(op), n = getN(op);
 	FPU_DP_FIX_MN();
 
 	if(FPU_DP()) // double-precision
 	{
 		if(DR[m] == DR[n])
 			setSR(SR | F_SR_T);
+		else
+			setSR(SR & ~F_SR_T);
 	}
 	else // single-precision
 	{
 		if(FR[m] == FR[n])
 			setSR(SR | F_SR_T);
+		else
+			setSR(SR & ~F_SR_T);
 	}
 	PC+=2;
 }
 
-void SHCpu::FCMPGT(int m, int n)
+void SHCpu::FCMPGT(Word op)
 {
+	int m = getM(op), n = getN(op);
 	FPU_DP_FIX_MN();
 
 	if(FPU_DP())
@@ -1907,39 +2369,43 @@ void SHCpu::FCMPGT(int m, int n)
 		// double-precision
 		if(DR[n] > DR[m])
 			setSR(SR | F_SR_T);
+		else
+			setSR(SR & ~F_SR_T);
 	}
 	else
 	{
 		// single-precision
-		if(FR[n] > FR[m]) setSR(SR | F_SR_T);
+		if(FR[n] > FR[m])
+			setSR(SR | F_SR_T); 
+		else
+			setSR(SR & ~F_SR_T);
 	}
 	PC+=2;
 }
 
-void SHCpu::FCNVSD(int n)
+void SHCpu::FCNVSD(Word op)
 {
+	int n = getN(op);
 	FPU_DP_FIX_N();
 
 	DR[n] = (double) FPUL;
 	PC+=2;
 }
 
-void SHCpu::FDIV(int m, int n)
+void SHCpu::FDIV(Word op)
 {
+	int m = getM(op), n = getN(op);
 //	FPU_DP_FIX_MN();
 
 	if(FPSCR & F_FPSCR_PR)
 	{
 		cnv_dbl tmpa, tmpb;
-		tmpa.i[1] = FR_Dwords[n];
-		tmpa.i[0] = FR_Dwords[n+1];
-		tmpb.i[1] = FR_Dwords[m];
-		tmpb.i[0] = FR_Dwords[m+1];
+		tmpa.i[1] = FR_Dwords[n]; tmpa.i[0] = FR_Dwords[n+1];
+		tmpb.i[1] = FR_Dwords[m]; tmpb.i[0] = FR_Dwords[m+1];
 		printf("FDIV: %f / %f = ", tmpa.d, tmpb.d);
 		tmpa.d /= tmpb.d;
 		printf("%f\n", tmpa.d);
-		FR_Dwords[n] = tmpa.i[1];
-		FR_Dwords[n+1] = tmpa.i[0];
+		FR_Dwords[n] = tmpa.i[1]; FR_Dwords[n+1] = tmpa.i[0];
 //		DR[n] /= DR[m];
 	}
 	else
@@ -1947,27 +2413,30 @@ void SHCpu::FDIV(int m, int n)
 	PC+=2;
 }
 
-void SHCpu::FLDI0(int n)
+void SHCpu::FLDI0(Word op)
 {
-
+	int n = getN(op);
 	FR[n] = 0.0f;
 	PC+=2;
 }
 
-void SHCpu::FLDI1(int n)
+void SHCpu::FLDI1(Word op)
 {
+	int n = getN(op);
 	FR[n] = 1.0f;
 	PC+=2;
 }
 
-void SHCpu::FLDS(int n)
+void SHCpu::FLDS(Word op)
 {
+	int n = getN(op);
 	FPUL = FR_Dwords[n];
 	PC+=2;
 }
 
-void SHCpu::FLOAT(int n)
+void SHCpu::FLOAT(Word op)
 {
+	int n = getN(op);
 //	FPU_DP_FIX_N();
 	if(FPU_DP()) {
 		cnv_dbl tmpa;
@@ -1986,88 +2455,16 @@ void SHCpu::FLOAT(int n)
 	PC+=2;
 }
 
-void SHCpu::FMAC(int m, int n)
+void SHCpu::FMAC(Word op)
 {
+	int m = getM(op), n = getN(op);
 	FR[n] = (FR[0] * FR[m]) + FR[n];
 	PC+=2;
 }
 
-void SHCpu::FMOV_STORE_XD(int m, int n)
+void SHCpu::FCNVDS(Word op)
 {
-	FPU_DP_FIX_M();
-
-	mmu->writeDouble(R[n], XD[m]);
-	PC+=2;
-}
-
-void SHCpu::FMOV_LOAD_XD(int m, int n)
-{
-	FPU_DP_FIX_N();
-
-	XD[n] = mmu->readDouble(R[m]);
-	PC+=2;
-}
-
-void SHCpu::FMOV_RESTORE_XD(int m, int n)
-{
-	FPU_DP_FIX_N();
-
-	XD[n] = mmu->readDouble(R[m]);
-	R[m]+=8;
-	PC+=2;
-}
-
-void SHCpu::FMOV_SAVE_XD(int m, int n)
-{
-	FPU_DP_FIX_M();
-
-	R[n]-=8;
-	mmu->writeDouble(R[n], XD[m]);
-	PC+=2;
-}
-
-
-void SHCpu::FMOV_INDEX_LOAD_XD(int m, int n)
-{
-	FPU_DP_FIX_N();
-
-	XD[n] = mmu->readDouble(R[0]+R[m]);
-	PC+=2;
-}
-
-
-void SHCpu::FMOV_INDEX_STORE_XD(int m, int n)
-{
-	FPU_DP_FIX_M();
-
-	mmu->writeDouble(R[0]+R[n], XD[m]);
-	PC+=2;
-}
-
-
-void SHCpu::FMOV_XDXD(int m, int n)
-{
-	FPU_DP_FIX_MN();
-	XD[n] = XD[m];
-	PC+=2;
-}
-
-void SHCpu::FMOV_XDDR(int m, int n)
-{
-	FPU_DP_FIX_MN();
-	DR[n] = XD[m];
-	PC+=2;
-}
-
-void SHCpu::FMOV_DRXD(int m, int n)
-{
-	FPU_DP_FIX_MN();
-	XD[n] = DR[m];
-	PC+=2;
-}
-
-void SHCpu::FCNVDS(int n)
-{
+	int n = getN(op);
 	FPU_DP_FIX_N();
 	if(FPU_DP())
 		FPUL = (float) DR[n];
@@ -2076,8 +2473,9 @@ void SHCpu::FCNVDS(int n)
 	PC+=2;
 }
 
-void SHCpu::FNEG(int n)
+void SHCpu::FNEG(Word op)
 {
+	int n = getN(op);
 	FPU_DP_FIX_N();
 	if(FPU_DP())
 		DR[n] = -DR[n];
@@ -2086,20 +2484,21 @@ void SHCpu::FNEG(int n)
 	PC+=2;
 }
 
-void SHCpu::FRCHG()
+void SHCpu::FRCHG(Word op)
 {
 	setFPSCR(FPSCR ^ 0x00200000);
 	PC+=2;
 }
 
-void SHCpu::FSCHG()
+void SHCpu::FSCHG(Word op)
 {
 	setFPSCR(FPSCR ^ 0x00100000);
 	PC+=2;
 }
 
-void SHCpu::FSQRT(int n)
+void SHCpu::FSQRT(Word op)
 {
+	int n = getN(op);
 	FPU_DP_FIX_N();
 	if(FPU_DP())
 		DR[n] = sqrt(DR[n]);
@@ -2108,14 +2507,16 @@ void SHCpu::FSQRT(int n)
 	PC+=2;
 }
 
-void SHCpu::FSTS(int n)
+void SHCpu::FSTS(Word op)
 {
+	int n = getN(op);
 	FR_Dwords[n] = FPUL;
 	PC+=2;
 }
 
-void SHCpu::FSUB(int m, int n)
+void SHCpu::FSUB(Word op)
 {
+	int m = getM(op), n = getN(op);
 	FPU_DP_FIX_MN();
 	if(FPU_DP())
 		DR[n]-=DR[m];
@@ -2125,14 +2526,18 @@ void SHCpu::FSUB(int m, int n)
 
 }
 
-void SHCpu::FTRC(int n)
+void SHCpu::FTRC(Word op)
 {
-	FPU_DP_FIX_N();
+	int n = getN(op);
+//	FPU_DP_FIX_N();
 	if(FPU_DP()) {
+		n &= 0xe;
 		cnv_dbl tmpa;
-		tmpa.i[1] = *((unsigned int*)&FR[n<<1]);
-		tmpa.i[0] = *((unsigned int*)&FR[(n<<1) + 1]);
-		FPUL = (Dword)((float)tmpa.d);
+		tmpa.i[1] = FR_Dwords[n];
+		tmpa.i[0] = FR_Dwords[n+1];
+		printf("FTRC: %f = ", tmpa.d);
+		FPUL = (Dword)(tmpa.d);	// XXX: (float) - always truncates too much
+		printf(" %08x (%d)\n", FPUL, FPUL);
 //		FPUL = (float) DR[n];
 	}
 	else {
@@ -2142,18 +2547,38 @@ void SHCpu::FTRC(int n)
 	PC+=2;
 }
 
-void SHCpu::FSCA(int n)
+void SHCpu::FSCA(Word op)
 {
+	int n = getN(op);
 	float angle = ((float)FPUL / 65535.0) * 2 * M_PI;
 	FR[n] = sin(angle);
 	FR[n+1] = cos(angle);
 	PC+=2;
 }
 
-void SHCpu::FSRRA(int n)
+void SHCpu::FSRRA(Word op)
 {
+	int n = getN(op);
 	// FIXME: should this work on DR regs as well?
 	FR[n] = 1/sqrt(FR[n]);
+	PC+=2;
+}
+
+void SHCpu::FTRV(Word op)
+{
+	int n = getN(op) & 0xc;
+	float tmp[4];
+	tmp[0] = FR[n]; tmp[1] = FR[n+1]; tmp[2] = FR[n+2]; tmp[3] = FR[n+3];
+	for (int i = 0; i < 4; i++)
+	{
+		FR[n+i] = XF[0+i]*tmp[0] + XF[4+i]*tmp[1] + XF[8+i]*tmp[2] + XF[12+i]*tmp[3];
+	}
+	PC+=2;
+}
+
+void SHCpu::LDTLB(Word op)
+{
+	mmu->ldtlb();
 	PC+=2;
 }
 
@@ -2265,6 +2690,7 @@ void SHCpu::reset()
 	*((Dword*)((Dword)ccnRegs+MMUCR)) = 0xff000010;
 	setFPSCR(0x00040001);
 	exceptionsPending = 0;
+	numIterations = 0;
 }
 
 // Executes a single instruction.
@@ -2272,295 +2698,55 @@ void SHCpu::reset()
 // somehow transforms this crap into reasonably fast code.
 void SHCpu::executeInstruction(Word d)
 {
-	switch(d & 0xF000)
-	{
-	case 0x6000:
-		switch(d & 0xF00F)
-		{
-			case 0x6000: MOVBL(getM(d), getN(d)); return;
-			case 0x6001: MOVWL(getM(d), getN(d)); return;
-			case 0x6002: MOVLL(getM(d), getN(d)); return;
-			case 0x6003: MOV(getM(d), getN(d)); return;
-			case 0x6004: MOVBP(getM(d), getN(d)); return;
-			case 0x6005: MOVWP(getM(d), getN(d)); return;
-			case 0x6006: MOVLP(getM(d), getN(d)); return;
-			case 0x6007: NOT(getM(d), getN(d)); return;
-			case 0x6008: SWAPB(getM(d), getN(d)); return;
-			case 0x6009: SWAPW(getM(d), getN(d)); return;
-			case 0x600a: NEGC(getM(d), getN(d)); return;
-			case 0x600b: NEG(getM(d), getN(d)); return;
-			case 0x600c: EXTUB(getM(d), getN(d)); return;
-			case 0x600d: EXTUW(getM(d), getN(d)); return;
-			case 0x600e: EXTSB(getM(d), getN(d)); return;
-			case 0x600f: EXTSW(getM(d), getN(d)); return;
-		} break;
-
-	case 0x2000: 
-		switch(d & 0xF00F)
-		{
-			case 0x2000: MOVBS(getM(d), getN(d)); return;
-			case 0x2001: MOVWS(getM(d), getN(d)); return;
-			case 0x2002: MOVLS(getM(d), getN(d)); return;
-			case 0x2004: MOVBM(getM(d), getN(d)); return;
-			case 0x2005: MOVWM(getM(d), getN(d)); return;
-			case 0x2006: MOVLM(getM(d), getN(d)); return;
-			case 0x2007: DIV0S(getM(d), getN(d)); return;
-			case 0x2008: TST(getM(d), getN(d)); return;
-			case 0x2009: AND(getM(d), getN(d)); return;
-			case 0x200a: XOR(getM(d), getN(d)); return;
-			case 0x200b: OR(getM(d), getN(d)); return;
-			case 0x200c: CMPSTR(getM(d), getN(d)); return;
-			case 0x200d: XTRCT(getM(d), getN(d)); return;
-			case 0x200e: MULU(getM(d), getN(d)); return;
-			case 0x200f: MULS(getM(d), getN(d)); return;
-		} break;
-
-	case 0x3000: 
-		switch(d & 0xF00F)
-		{
-			case 0x3000: CMPEQ(getM(d), getN(d)); return;
-			case 0x3002: CMPHS(getM(d), getN(d)); return;
-			case 0x3003: CMPGE(getM(d), getN(d)); return;
-			case 0x3004: DIV1(getM(d), getN(d)); return;
-			case 0x3005: DMULU(getM(d), getN(d)); return;
-			case 0x3006: CMPHI(getM(d), getN(d)); return;
-			case 0x3007: CMPGT(getM(d), getN(d)); return;
-			case 0x3008: SUB(getM(d), getN(d)); return;
-			case 0x300a: SUBC(getM(d), getN(d)); return;
-			case 0x300b: SUBV(getM(d), getN(d)); return;
-			case 0x300c: ADD(getM(d), getN(d)); return;
-			case 0x300d: DMULS(getM(d), getN(d)); return;
-			case 0x300e: ADDC(getM(d), getN(d)); return;
-			case 0x300f: ADDV(getM(d), getN(d)); return;
-		} break;
-
-	case 0x8000: 
-		switch(d & 0xFF00)
-		{
-		case 0x8000: MOVBS4(getI(d), getM(d)); return;
-		case 0x8100: MOVWS4(getI(d), getM(d)); return;
-		case 0x8400: MOVBL4(getM(d), getI(d)); return;
-		case 0x8500: MOVWL4(getM(d), getI(d)); return;
-		case 0x8800: CMPIM(getI(d)); return;
-		case 0x8900: BT(getI(d)); return;
-		case 0x8b00: BF(getI(d)); return;
-		case 0x8d00: BTS(getI(d)); return;
-		case 0x8f00: BFS(getI(d)); return;
-		} break;
-
-	case 0xc000: 
-		switch(d & 0xFF00)
-		{
-		case 0xc000: MOVBSG(getI(d)); return;
-		case 0xc100: MOVWSG(getI(d)); return;
-		case 0xc200: MOVLSG(getI(d)); return;
-		case 0xc300: TRAPA(getI(d)); return;
-		case 0xc400: MOVBLG(getI(d)); return;
-		case 0xc500: MOVWLG(getI(d)); return;
-		case 0xc600: MOVLLG(getI(d)); return;
-		case 0xc700: MOVA(getI(d)); return;
-		case 0xc800: TSTI(getI(d)); return;
-		case 0xc900: ANDI(getI(d)); return;
-		case 0xca00: XORI(getI(d)); return;
-		case 0xcb00: ORI(getI(d)); return;
-		case 0xcc00: TSTM(getI(d)); return;
-		case 0xcd00: ANDM(getI(d)); return;
-		case 0xce00: XORM(getI(d)); return;
-		case 0xcf00: ORM(getI(d)); return;
-		} break;
-
-	case 0x4000: 
-		switch(d & 0xF0FF)
-		{
-		case 0x4000: SHLL(getN(d)); return;
-		case 0x4010: DT(getN(d)); return;
-		case 0x4020: SHAL(getN(d)); return;
-		case 0x4001: SHLR(getN(d)); return;
-		case 0x4011: CMPPZ(getN(d)); return;
-		case 0x4021: SHAR(getN(d)); return;
-		case 0x4002: STSMMACH(getN(d)); return;
-		case 0x4012: STSMMACL(getN(d)); return;
-		case 0x4022: STSMPR(getN(d)); return;
-		case 0x4032: STCMSGR(getN(d)); return;
-		case 0x4052: STSMFPUL(getN(d)); return;
-		case 0x4062: STSMFPSCR(getN(d)); return;
-		case 0x40f2: STCMDBR(getN(d)); return;
-		case 0x4003: STCMSR(getN(d)); return;
-		case 0x4013: STCMGBR(getN(d)); return;
-		case 0x4023: STCMVBR(getN(d)); return;
-		case 0x4033: STCMSSR(getN(d)); return;
-		case 0x4043: STCMSPC(getN(d)); return;
-		case 0x4004: ROTL(getN(d)); return;
-		case 0x4024: ROTCL(getN(d)); return;
-		case 0x4005: ROTR(getN(d)); return;
-		case 0x4015: CMPPL(getN(d)); return;
-		case 0x4025: ROTCR(getN(d)); return;
-		case 0x4056: LDSMFPUL(getN(d)); return;
-		case 0x4066: LDSMFPSCR(getN(d)); return;
-		case 0x4006: LDSMMACH(getN(d)); return;
-		case 0x4016: LDSMMACL(getN(d)); return;
-		case 0x4026: LDSMPR(getN(d)); return;
-		case 0x40f6: LDCMDBR(getN(d)); return;
-		case 0x4007: LDCMSR(getN(d)); return;
-		case 0x4017: LDCMGBR(getN(d)); return;
-		case 0x4027: LDCMVBR(getN(d)); return;
-		case 0x4037: LDCMSSR(getN(d)); return;
-		case 0x4047: LDCMSPC(getN(d)); return;
-		case 0x4008: SHLL2(getN(d)); return;
-		case 0x4018: SHLL8(getN(d)); return;
-		case 0x4028: SHLL16(getN(d)); return;
-		case 0x4009: SHLR2(getN(d)); return;
-		case 0x4019: SHLR8(getN(d)); return;
-		case 0x4029: SHLR16(getN(d)); return;
-		case 0x400a: LDSMACH(getN(d)); return;
-		case 0x401a: LDSMACL(getN(d)); return;
-		case 0x402a: LDSPR(getN(d)); return;
-		case 0x406a: LDSFPSCR(getN(d)); return;
-		case 0x405a: LDSFPUL(getN(d)); return;
-		case 0x40fa: LDCDBR(getN(d)); return;
-		case 0x400b: JSR(getN(d)); return;
-		case 0x401b: TAS(getN(d)); return;
-		case 0x402b: JMP(getN(d)); return;
-		case 0x400e: LDCSR(getN(d)); return;
-		case 0x401e: LDCGBR(getN(d)); return;
-		case 0x402e: LDCVBR(getN(d)); return;
-		case 0x403e: LDCSSR(getN(d)); return;
-		case 0x404e: LDCSPC(getN(d)); return;
-		} break;
-		
-	case 0x7000: ADDI(getI(d), getN(d)); return;
-	case 0xa000: BRA((Sword)((Word) d & 0xfff)); return;
-	case 0xb000: BSR((Sword)((Word) d & 0xfff)); return;
-	case 0xe000: MOVI(getI(d), getN(d)); return;
-	case 0x9000: MOVWI(getI(d), getN(d)); return;
-	case 0xd000: MOVLI(getI(d), getN(d)); return;
-	case 0x1000: MOVLS4(getM(d), getI(d), getN(d)); return;
-	case 0x5000: MOVLL4(getM(d), getI(d), getN(d)); return;
-	}
-
-	switch(d & 0xf08f)
-	{
-	case 0x408e: LDCRBANK(getM(d)&0x7, getN(d)); return;
-	case 0x4087: LDCMRBANK(getM(d)&0x7, getN(d)); return;
-	case 0x0082: STCRBANK(getM(d)&0x7, getN(d)); return;
-	case 0x4083: STCMRBANK(getM(d)&0x7, getN(d)); return;
-	}
-
-	switch(d)
-	{
-	case 0x0028: CLRMAC(); return;
-	case 0x0048: CLRS(); return;
-	case 0x0008: CLRT(); return;
-	case 0x0019: DIV0U(); return;
-	case 0x0009: NOP(); return;
-	case 0x002b: RTE(); return;
-	case 0x000b: RTS(); return;
-	case 0x0058: SETS(); return;
-	case 0x0018: SETT(); return;
-	case 0x0038: mmu->ldtlb(); PC+=2; return;
-	case 0x001b: SLEEP(); return;
-	case 0xfffd: dispatchSwirlyHook(); return;
-	}
-
-	switch(d & 0xF00F)
-	{
-	case 0xf000: FADD(getM(d), getN(d)); return;
-	case 0xf001: FSUB(getM(d), getN(d)); return;
-	case 0xf002: FMUL(getM(d), getN(d)); return;
-	case 0xf003: FDIV(getM(d), getN(d)); return;
-	case 0xf004: FCMPEQ(getM(d), getN(d)); return;
-	case 0xf005: FCMPGT(getM(d), getN(d)); return;
-	case 0xf006: FMOV_INDEX_LOAD(getM(d), getN(d)); return;
-	case 0xf007: FMOV_INDEX_STORE(getM(d), getN(d)); return;
-	case 0xf008: FMOV_LOAD(getM(d), getN(d)); return;
-	case 0xf009: FMOV_RESTORE(getM(d), getN(d)); return;
-	case 0xf00a: FMOV_STORE(getM(d), getN(d)); return;
-	case 0xf00b: FMOV_SAVE(getM(d), getN(d)); return;
-	case 0xf00c: FMOV(getM(d), getN(d)); return;
-	case 0xf00e: FMAC(getM(d), getN(d)); return;
-
-	case 0x000f: DO_MACL(getM(d), getN(d)); return;
-	case 0x0004: MOVBS0(getM(d), getN(d)); return;
-	case 0x0005: MOVWS0(getM(d), getN(d)); return;
-	case 0x0006: MOVLS0(getM(d), getN(d)); return;
-	case 0x000c: MOVBL0(getM(d), getN(d)); return;
-	case 0x000d: MOVWL0(getM(d), getN(d)); return;
-	case 0x000e: MOVLL0(getM(d), getN(d)); return;
-	case 0x0007: MULL(getM(d), getN(d)); return;
-
-	case 0x400f: MACW(getM(d), getN(d)); return;
-	case 0x400c: SHAD(getM(d), getN(d)); return;
-	case 0x400d: SHLD(getM(d), getN(d)); return;
-	}
-
-	switch(d & 0xF0FF)
-	{
-	case 0x0023: BRAF(getN(d)); return;
-	case 0x0003: BSRF(getN(d)); return;
-	case 0x00c3: MOVCAL(getN(d)); return;
-	case 0x0029: MOVT(getN(d)); return;
-	case 0x0093: OCBI(getN(d)); return;
-	case 0x00a3: OCBP(getN(d)); return;
-	case 0x00b3: OCBWB(getN(d)); return;
-	case 0x0083: PREF(getN(d)); return;
-	case 0x0002: STCSR(getN(d)); return;
-	case 0x0012: STCGBR(getN(d)); return;
-	case 0x0022: STCVBR(getN(d)); return;
-	case 0x0032: STCSSR(getN(d)); return;
-	case 0x0042: STCSPC(getN(d)); return;
-	case 0x003a: STCSGR(getN(d)); return;
-	case 0x00fa: STCDBR(getN(d)); return;
-	case 0x000a: STSMACH(getN(d)); return;
-	case 0x001a: STSMACL(getN(d)); return;
-	case 0x002a: STSPR(getN(d)); return;
-	case 0x0062: STSFPSCR(getN(d)); return;
-	case 0x005a: STSFPUL(getN(d)); return;
-
-	case 0xf00d: FSTS(getN(d)); return;
-	case 0xf01d: FLDS(getN(d)); return;
-	case 0xf02d: FLOAT(getN(d)); return;
-	case 0xf03d: FTRC(getN(d)); return;
-	case 0xf04d: FNEG(getN(d)); return;
-	case 0xf07d: FSRRA(getN(d)); return;
-	case 0xf08d: FLDI0(getN(d)); return;
-	case 0xf09d: FLDI1(getN(d)); return;
-	case 0xf0ad: FCNVSD(getN(d)); return;
-	case 0xf0bd: FCNVDS(getN(d)); return;
-	case 0xf0fd: FSCA(getN(d)); return;
-	}
-
-	// Uh-oh; we can't figure out this instruction
-	exception(E_GENERAL_ILLEGAL_INSTRUCTION, PC, d, "Offending opcode");
+	(this->*sh_instruction_jump_table[d])(d);
 }
 
 // starts executing instructions
 void SHCpu::go()
 {
+    opcode_handler_struct *ostruct;
+	int i;
+
+	printf("Building Jumptable\n");	
+	for(i = 0; i < 0x10000; i++)
+	{
+		/* default to illegal */
+		sh_instruction_jump_table[i] = &SHCpu::unknownOpcode;
+    }
+
+	ostruct = sh_opcode_handler_table;
+	do
+	{
+		for(i = 0;i < 0x10000;i++)
+		{
+			if((i & ostruct->mask) == ostruct->match)
+            {
+				sh_instruction_jump_table[i] = ostruct->opcode_handler;
+            }
+        }
+		ostruct++;
+	} while(ostruct->match != 0xfffd);
+	sh_instruction_jump_table[0xfffd] = &SHCpu::dispatchSwirlyHook;
+
+	printf("Start execution\n");	
+
 	Word d;
-	Dword numIterations = 0;
+
+	addInterrupt(0x80000, 0);	// first SDL event
+	addInterrupt(0x1000, 1);	// first VBL event
 
 	for(;;)
 	{
 		if(debugger->prompt())
 		{
-//			try {
-			d = mmu->fetchInstruction(PC);
-			executeInstruction(d);
-//			} catch (...) { // SHMmu::xMMUException
-//				printf("Exception caught\n");
-//			}
-			numIterations++;
-			if((numIterations & 0x7) == 0x0)
-			{
-				tmu->updateTCNT0();
-				tmu->updateTCNT1();
-			}	
-			if((numIterations & 0x7ffff) == 0x7ffff)
-			{
-				// make SDL handle events
-				overlord->handleEvents();
-				gpu->drawFrame();
+			try {
+				d = mmu->fetchInstruction(PC);
+				executeInstruction(d);
+			} catch (...) { // SHMmu::xMMUException
+				printf("Exception caught PC=%08x\n", SPC);
 			}
+			numIterations++;
+			checkInterrupt();
 		}
 	} // for
 }
@@ -2583,5 +2769,46 @@ void SHCpu::exception(Dword type, Dword addr, Dword data, char *datadesc)
 			addr,
 			datadesc,
 			data);
+	}
+}
+
+typedef map<Dword, Dword> intr_map;
+intr_map intrpts;
+
+void SHCpu::addInterrupt(Dword at, Dword type)
+{
+	intrpts[numIterations + at] = type;
+}
+
+inline void SHCpu::checkInterrupt()
+{
+	intr_map::iterator ci = intrpts.begin();
+	while (ci->first <= numIterations) {
+		switch (ci->second) {
+			case 0: 		
+				overlord->handleEvents();
+				gpu->drawFrame();
+				addInterrupt(0x80000, 0);	// next SDL event
+				break;
+			case 1:
+				maple->asicAckA |= 0x20; 
+				addInterrupt(0x80000, 1);	// next VBL event
+				break;
+			case 2:
+				tmu->updateTCNT0();
+				break;
+			case 3:
+				tmu->updateTCNT1();
+				break;
+			default:
+				printf("Unknown Interrupt Type: %d\n", ci->second);
+		}
+		intrpts.erase(ci);
+		ci = intrpts.begin();	
+	}
+
+	if (maple->asic9a & maple->asicAckA)
+	{
+		intc->externalInt(9, 0x320);
 	}
 }

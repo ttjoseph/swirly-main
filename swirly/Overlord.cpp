@@ -33,6 +33,7 @@ void Overlord::handleEvents()
 	case SDL_KEYUP:
 		switch(e.key.keysym.sym)
 		{
+		case SDLK_a: button = BUTTON_A; break;
 		case SDLK_LEFT: button = BUTTON_LEFT; break;
 		case SDLK_RIGHT: button = BUTTON_RIGHT; break;
 		case SDLK_UP: button = BUTTON_UP; break;

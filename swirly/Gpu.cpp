@@ -3,10 +3,19 @@
 #include "Overlord.h"
 
 #include <GL/gl.h>
+#include <GL/glu.h>
 
 #define RegDword(offs) (*((Dword*)(regs+offs)))
 #define RegFloat(offs) (*((float*)(regs+offs)))
 
+char *listtype[] = { "opaque polygon", "opaque modifier", "transparent polygon",
+	"transparent modifier", "punchthru polygon"};
+
+char *colortype[] = { "32bit ARGB packed colour", "32bit * 4 floating point colour",
+	"intensity", "intensity from previous face"};
+
+GLenum depthType[] = {GL_NEVER, GL_GEQUAL, GL_EQUAL, GL_GREATER, GL_LEQUAL, GL_NOTEQUAL, GL_LESS, GL_ALWAYS};
+	
 Gpu::Gpu(SHCpu *shcpu) : cpu(shcpu), screen(0), currBackBuffer(0), dwordsReceived(0)
 {
 	for(int i=0; i<GPU_MAXBACKBUFFERS; i++)
@@ -42,7 +51,7 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 	dwordsReceived++;
 	bool withinList = false;
 
-	cpu->debugger->print("Gpu::handleTaWrite: received a write to the TA, addr: %08x, data %08x\n", addr, data);
+//	cpu->debugger->print("Gpu::handleTaWrite: received a write to the TA, addr: %08x, data %08x\n", addr, data);
 	if(dwordsReceived == 1)
 	{
 		// see which command this is and decide how many dwords we need to receive
@@ -62,26 +71,51 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 		case 7: // Vertex
 			if(withinList == false)
 			{
-				glBegin(GL_TRIANGLES);
+				glBegin(GL_TRIANGLE_STRIP);
 				withinList = true;
 			}
-			withinList = true;
-			cpu->debugger->print("TA: vertex (%.2f %.2f %.2f) RGBA: %.2f %.2f %.2f %.2f\n",
+			cpu->debugger->print("TA: vertex (%.2f %.2f %.2f) texture (%.2f %.2f) ARGB: %08x oARGB: %08x\n",
 				recvFloat[1],
 				recvFloat[2],
 				recvFloat[3],
+				recvFloat[4],
 				recvFloat[5],
 				recvFloat[6],
-				recvFloat[7],
-				recvFloat[4]
+				recvFloat[7]
 				);
 
-			glColor4f(recvFloat[5], recvFloat[6], recvFloat[7], recvFloat[4]);
-			glVertex3f(recvFloat[1], recvFloat[2], -1.0f * recvFloat[3]);
+			// XXX: support only for packed Color at the moment
+			// glColor4f(recvFloat[5], recvFloat[6], recvFloat[7], recvFloat[4]);
+			printf("Red %f Green %f Blue %f Alpha %f\n", (float)((recvBuf[6]>>16)&0xff), (float)((recvBuf[6]>>8)&0xff),(float)(recvBuf[6]&0xff),(float)((recvBuf[6]>>24)&0xff));
+			glColor4f((float)((recvBuf[6]>>16)&0xff), (float)((recvBuf[6]>>8)&0xff),(float)(recvBuf[6]&0xff),(float)((recvBuf[6]>>24)&0xff));
+			glVertex3f(recvFloat[1], 480.0 - recvFloat[2], recvFloat[3]);
+			if(recvBufDwords[0] & 0x10000000) {
+				glEnd();
+				withinList = false;
+			}
 			break;
 		case 0: // End of list
 			cpu->debugger->print("TA: end of list\n");
-			glEnd();
+			switch (actListType) {
+				case 0:	// opaque polygon
+					cpu->maple->asicAckA |= (1 << 0x7); 
+					break;
+				case 1:	// opaque modifier
+					cpu->maple->asicAckA |= (1 << 0x8); 
+					break;
+				case 2:	// transparent polygon
+					cpu->maple->asicAckA |= (1 << 0x9); 
+				    SDL_GL_SwapBuffers( );
+					glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			        glLoadIdentity();
+					break;
+				case 3:	// transparent modifier
+					cpu->maple->asicAckA |= (1 << 0xa); 
+					break;
+				case 4:	// punchthru polygon
+					cpu->maple->asicAckA |= (1 << 0x15); 
+					break;
+			}
 			withinList = false;
 			break;
 		case 1: // user clip
@@ -95,6 +129,12 @@ void Gpu::handleTaWrite(Dword addr, Dword data)
 			break;
 		case 4: // polygon / modifier volume
 		//	cpu->debugger->print("TA: Polygon / modifier volume\n");
+			actListType = (recvBuf[0]>>24)&0x7;
+		
+	        glDepthFunc(depthType[(recvBuf[1]>>29)&0x7]);
+
+			cpu->debugger->print("TA: Polygon / modifier volume: Listtype: %s Colortype: %s (%s)\n", listtype[actListType],colortype[(recvBuf[0]>>4)&0x3],(recvBuf[0]&0x8)?"texture":"no texture");
+			cpu->debugger->print("TA: depthType: %d\n", (recvBuf[1]>>29)&0x7);
 			break;
 		default: // hmm...
 			cpu->debugger->print("TA: *** unimplemented TA command\n");
@@ -119,6 +159,8 @@ void Gpu::drawFrame()
 
 Dword Gpu::hook(int eventType, Dword addr, Dword data)
 {
+	cpu->debugger->print("GPU::access: access to external addr %08X, PC=%08X\n", addr, cpu->PC);
+
 	Dword offs = addr & 0xfff;
 
 	if(eventType & MMU_READ)
@@ -130,6 +172,7 @@ Dword Gpu::hook(int eventType, Dword addr, Dword data)
 	{
 	case MMU_WRITE_DWORD:
 		RegDword(offs) = data;
+		if (offs == 0x014) cpu->maple->asicAckA |= 0x40; // render done
 		break;
 	case MMU_READ_DWORD:
 		return RegDword(offs);
@@ -232,7 +275,7 @@ void Gpu::modeChange()
 	if(!sane())
 		return;
 
-	// cpu->debugger->print("Gpu::modeChange: mode change to %dx%d, %dbpp\n", width(), height(), bpp());
+	cpu->debugger->print("Gpu::modeChange: mode change to %dx%d, %dbpp\n", width(), height(), bpp());
 
 	// Switch to 3D mode if necessary
 	if(taEnabled())
@@ -252,13 +295,16 @@ void Gpu::modeChange()
 		glLoadIdentity();
 		// XXX: what is going on here? why must we scale like this?
 		// cpu->debugger->print("Gpu::modeChange: background plane is at %f\n", RegFloat(GPU_REG_BGPLANE_Z));
-		glFrustum(0, width() / 10.0, 0, height() / 10.0, 1.0, RegFloat(GPU_REG_BGPLANE_Z));
-		//gluOrtho2D(0, width+200, 0, height+100);
+//		glFrustum(0, width() / 10.0, 0, height() / 10.0, 1.0, RegFloat(GPU_REG_BGPLANE_Z));
+		gluOrtho2D(0, width(), 0, height());
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
 
 		glClearColor(0.0, 0.0, 0.0, 0.0);
 		glShadeModel(GL_SMOOTH);
+
+        glClearDepth(1.0f);
+        glEnable(GL_DEPTH_TEST);
 
 		glViewport(0, 0, width(), height());
 		SDL_WM_SetCaption(VERSION_STRING " - OpenGL", NULL);

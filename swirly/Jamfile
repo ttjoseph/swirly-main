@@ -5,6 +5,7 @@ C++FLAGS = -I/usr/X11R6/include ;
 CC = gcc ;
 OPTIM = -O3 -fomit-frame-pointer ;
 # OPTIM = -ggdb -O0 ;
+LINK = g++ ;
 AS = nasm ;
 ASFLAGS = -f elf ;
 Main swirly :
@@ -27,10 +28,10 @@ Main swirly :
 	scramble.c
 	symtab.c
 	shfpu.s
-	shcpu.s
 	;
 LINKLIBS on swirly =
 	-lpthread
 	-lSDL
 	-lGL
+	-lGLU
 	;
