@@ -56,7 +56,7 @@
 class SHMmu
 {
 public:
-	Dword access(Dword externalAddr, int accessType);
+	Dword access(Dword externalAddr, int accessType, Dword tempData = 0);
 	void storeQueueSend(Dword target);
 	void ldtlb();
 
@@ -69,9 +69,18 @@ public:
 	void writeDwordToExternal(Dword addr, Dword d);
 	void writeWord(Dword addr, Word d);
 	void writeByte(Dword addr, Byte d);
+	int writeByteTLB(Dword accessAddr, Byte data);
+	int writeWordTLB(Dword accessAddr, Word data);
+	int writeDwordTLB(Dword accessAddr, Dword data);
+	int writeQwordTLB(Dword accessAddr, Dword data1, Dword data2);
 	Dword readDword(Dword addr);
 	Word readWord(Dword addr);
 	Byte readByte(Dword addr);
+	int readByteTLB(Dword addr, Byte* data);
+	int readWordTLB(Dword addr, Word* data);
+	int readDwordTLB(Dword addr, Dword* data);
+	int readQwordTLB(Dword addr, Dword* data1, Dword* data2);
+	int translateVirtual(Dword &addr, int type);
 	SHMmu();
 	virtual ~SHMmu();
 
@@ -84,19 +93,22 @@ private:
 	void updateMmucrUrc();
 	int searchUtlb(Dword addr);
 	int checkAsids(Dword tlbentry);
-	Dword translateVirtual(Dword addr);
-	Dword accessP4();
+	int accessUTLB(Dword &addr, int type);
+	int accessITLB(Dword &addr);
+	Dword accessP4(Dword accessAddr, int eventType, Dword tempData);
 
-	int eventType; // used internally to decide what exception to raise
-	Dword tempData, accessAddr;
+//	int eventType; // used internally to decide what exception to raise
+//	Dword tempData, accessAddr;
 
 	// TLB
 	Dword UTLB_Addr[64];
 	Dword UTLB_Data1[64];
 	Dword UTLB_Data2[64];
+	Dword UTLB_Mask[64];
 	Dword ITLB_Addr[4];
 	Dword ITLB_Data1[4];
 	Dword ITLB_Data2[4];
+	Dword ITLB_Mask[4];
 
 	// Store queues
 	Dword SQ0[8], SQ1[8];

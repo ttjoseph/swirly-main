@@ -74,8 +74,8 @@ void SHCpu::go() {
     {
 	if(debugger->prompt())
         {
-	    executeInstruction(cpu->currInstruction);
-	    numIterations++;
+		executeInstruction(cpu->currInstruction);
+	    if (++numIterations == 0) intc->iterationsOverflow();
 	    intc->checkInterrupt();
 	    currInstruction = mmu->fetchInstruction(PC);
 	}
@@ -212,10 +212,10 @@ void SHCpu::XORI(Word op)
 
 void SHCpu::XORM(Word op)
 {
-	Dword t;
-	t=mmu->readByte(GBR+R[0]);
+	Byte t;
+	if (mmu->readByteTLB(GBR+R[0], &t)) return;
 	t^=(op&0xff);
-	mmu->writeByte(GBR+R[0], t);
+	if (mmu->writeByteTLB(GBR+R[0], t)) return;
 	PC+=2;
 }
 
@@ -245,8 +245,8 @@ void SHCpu::TSTI(Word op)
 
 void SHCpu::TSTM(Word op)
 {
-	Dword t;
-	t=mmu->readByte(GBR+R[0]);
+	Byte t;
+	if (mmu->readByteTLB(GBR+R[0], &t)) return;
 	t&=(op&0xff);
 	if(t==0)T=1;
 	else T=0;
@@ -258,18 +258,19 @@ void SHCpu::TRAPA(Word op)
 	SSR=SR;
 	SPC=PC+2;
 	setSR(SR|F_SR_MD|F_SR_BL|F_SR_RB);
-	mmu->writeDword(0xff000000|TRA, (op&0xff)<<2);
-	mmu->writeDword(0xff000000|EXPEVT, 0x160);
+	mmu->access(0xff000000|TRA, MMU_WRITE_DWORD, (op&0xff)<<2);
+	mmu->access(0xff000000|EXPEVT, MMU_WRITE_DWORD, 0x160);
 	PC=VBR+0x100;
 }
 
 void SHCpu::TAS(Word op)
 {
 	int n = getN(op);
-	Sdword t, oldt;
-	oldt=t=(Sdword)mmu->readByte(R[n]);
+	Byte t, oldt;
+	if (mmu->readByteTLB(R[n], &t)) return;
+	oldt=t;
 	t|=0x80;
-	mmu->writeByte(R[n],t);
+	if (mmu->writeByteTLB(R[n], t)) return;
 	if(oldt==0)T=1; else T=0;
 	PC+=2;
 }
@@ -352,7 +353,7 @@ void SHCpu::STSPR(Word op)
 void SHCpu::STSMMACH(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, MACH);
+	if (mmu->writeDwordTLB(R[n]-4, MACH)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -360,7 +361,7 @@ void SHCpu::STSMMACH(Word op)
 void SHCpu::STSMMACL(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, MACL);
+	if (mmu->writeDwordTLB(R[n]-4, MACL)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -368,7 +369,7 @@ void SHCpu::STSMMACL(Word op)
 void SHCpu::STSMPR(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, PR);
+	if (mmu->writeDwordTLB(R[n]-4, PR)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -390,16 +391,16 @@ void SHCpu::STSFPUL(Word op)
 void SHCpu::STSMFPSCR(Word op)
 {
 	int n = getN(op);
+	if (mmu->writeDwordTLB(R[n]-4, FPSCR & 0x003fffff)) return;
 	R[n]-=4;
-	mmu->writeDword(R[n], FPSCR & 0x003fffff);
 	PC+=2;
 }
 
 void SHCpu::STSMFPUL(Word op)
 {
 	int n = getN(op);
+	if (mmu->writeDwordTLB(R[n]-4, FPUL)) return;
 	R[n]-=4;
-	mmu->writeDword(R[n], FPUL);
 	PC+=2;
 }
 
@@ -463,7 +464,7 @@ void SHCpu::STCRBANK(Word op)
 void SHCpu::STCMSR(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, SR);
+	if (mmu->writeDwordTLB(R[n]-4, SR)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -471,7 +472,7 @@ void SHCpu::STCMSR(Word op)
 void SHCpu::STCMGBR(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, GBR);
+	if (mmu->writeDwordTLB(R[n]-4, GBR)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -479,7 +480,7 @@ void SHCpu::STCMGBR(Word op)
 void SHCpu::STCMVBR(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, VBR);
+	if (mmu->writeDwordTLB(R[n]-4, VBR)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -487,7 +488,7 @@ void SHCpu::STCMVBR(Word op)
 void SHCpu::STCMSSR(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, SSR);
+	if (mmu->writeDwordTLB(R[n]-4, SSR)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -495,7 +496,7 @@ void SHCpu::STCMSSR(Word op)
 void SHCpu::STCMSPC(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, SPC);
+	if (mmu->writeDwordTLB(R[n]-4, SPC)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -503,7 +504,7 @@ void SHCpu::STCMSPC(Word op)
 void SHCpu::STCMSGR(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, SGR);
+	if (mmu->writeDwordTLB(R[n]-4, SGR)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -511,7 +512,7 @@ void SHCpu::STCMSGR(Word op)
 void SHCpu::STCMDBR(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n]-4, DBR);
+	if (mmu->writeDwordTLB(R[n]-4, DBR)) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -519,7 +520,7 @@ void SHCpu::STCMDBR(Word op)
 void SHCpu::STCMRBANK(Word op)
 {
 	int m = getM(op)&0x7, n = getN(op);
-	mmu->writeDword(R[n]-4, RBANK[m]);
+	if (mmu->writeDwordTLB(R[n]-4, RBANK[m])) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -744,7 +745,10 @@ void SHCpu::ORI(Word op)
 
 void SHCpu::ORM(Word op)
 {
-	mmu->writeByte(GBR+R[0], ((Dword) mmu->readByte(R[0]+GBR)) | (Dword) (Byte) (op&0xff));
+	Byte t;
+	if (mmu->readByteTLB(GBR+R[0], &t)) return;
+	t |= (Byte)(op&0xff);
+	if (mmu->writeByteTLB(GBR+R[0], t)) return;
 	PC+=2;
 }
 
@@ -834,7 +838,7 @@ void SHCpu::MOVT(Word op)
 void SHCpu::MOVCAL(Word op)
 {
 	int n = getN(op);
-	mmu->writeDword(R[n], R[0]);
+	if (mmu->writeDwordTLB(R[n], R[0])) return;
 	PC+=2;
 }
 
@@ -851,7 +855,7 @@ void SHCpu::MOVBS4(Word op)
 	int n = getM(op);
 	Dword dest;
 	dest=(op&0xf)+R[n];
-	mmu->writeByte(dest, R[0]);
+	if (mmu->writeByteTLB(dest, R[0])) return;
 	PC+=2;
 }
 
@@ -860,7 +864,7 @@ void SHCpu::MOVWS4(Word op)
 	int n = getM(op);
 	Dword dest;
 	dest=((op&0xf)<<1)+R[n];
-	mmu->writeWord(dest, R[0]);
+	if (mmu->writeWordTLB(dest, R[0])) return;
 	PC+=2;
 }
 
@@ -869,7 +873,7 @@ void SHCpu::MOVLS4(Word op)
 	int m = getM(op), n = getN(op);
 	Dword dest;
 	dest=((op&0xf)<<2)+R[n];
-	mmu->writeDword(dest, R[m]);
+	if (mmu->writeDwordTLB(dest, R[m])) return;
 	PC+=2;
 }
 
@@ -878,7 +882,9 @@ void SHCpu::MOVBL4(Word op)
 	int m = getM(op);
 	Dword dest;
 	dest = (op&0xf)+R[m];
-	R[0] = (Sdword) (Sbyte) mmu->readByte(dest);
+	Byte t;
+	if (mmu->readByteTLB(dest, &t)) return;
+	R[0] = (Sdword) (Sbyte) t;
 	PC+=2;
 }
 
@@ -887,7 +893,9 @@ void SHCpu::MOVWL4(Word op)
 	int m = getM(op);
 	Dword dest;
 	dest = ((op&0xf)<<1)+R[m];
-	R[0] = (Sdword) (Sword) mmu->readWord(dest);
+	Word t;
+	if (mmu->readWordTLB(dest, &t)) return;
+	R[0] = (Sdword) (Sword) t;
 	PC+=2;
 }
 
@@ -896,7 +904,7 @@ void SHCpu::MOVLL4(Word op)
 	int m = getM(op), n = getN(op);
 	Dword dest;
 	dest=((op&0xf)<<2)+R[m];
-	R[n]=mmu->readDword(dest);
+	if (mmu->readDwordTLB(dest, &R[n])) return;
 	PC+=2;
 }
 
@@ -905,7 +913,9 @@ void SHCpu::MOVBLG(Word op)
 {
 	Dword dest;
 	dest = (Dword)(op&0xff)+GBR;
-	R[0]=(Sdword)(Sbyte)mmu->readByte(dest);
+	Byte t;
+	if (mmu->readByteTLB(dest, &t)) return;
+	R[0] = (Sdword) (Sbyte) t;
 	PC+=2;
 }
 
@@ -913,7 +923,9 @@ void SHCpu::MOVWLG(Word op)
 {
 	Dword dest;
 	dest = ((Dword)(op&0xff)<<1)+GBR;
-	R[0]=(Sdword)(Sword)mmu->readWord(dest);
+	Word t;
+	if (mmu->readWordTLB(dest, &t)) return;
+	R[0] = (Sdword) (Sword) t;
 	PC+=2;
 }
 
@@ -921,7 +933,7 @@ void SHCpu::MOVLLG(Word op)
 {
 	Dword dest;
 	dest=((Dword)(op&0xff)<<2)+GBR;
-	R[0]=mmu->readDword(dest);
+	if (mmu->readDwordTLB(dest, &R[0])) return;
 	PC+=2;
 }
 
@@ -929,7 +941,7 @@ void SHCpu::MOVBSG(Word op)
 {
 	Dword dest;
 	dest = (Dword)(op&0xff)+GBR;
-	mmu->writeByte(dest, (Byte)R[0]);
+	if (mmu->writeByteTLB(dest, R[0])) return;
 	PC+=2;
 }
 
@@ -937,7 +949,7 @@ void SHCpu::MOVWSG(Word op)
 {
 	Dword dest;
 	dest = ((Dword)(op&0xff)<<1)+GBR;
-	mmu->writeWord(dest, (Word)R[0]);
+	if (mmu->writeWordTLB(dest, R[0])) return;
 	PC+=2;
 }
 
@@ -945,7 +957,7 @@ void SHCpu::MOVLSG(Word op)
 {
 	Dword dest;
 	dest = ((Dword)(op&0xff)<<2)+GBR;
-	mmu->writeDword(dest, R[0]);
+	if (mmu->writeDwordTLB(dest, R[0])) return;
 	PC+=2;
 }
 
@@ -961,7 +973,9 @@ void SHCpu::MOVWI(Word op)
 	int n = getN(op);
 	Dword dest;
 	dest = (((Dword)(op&0xff)) << 1)+4+PC;
-	R[n]=(Sdword) (Sword) mmu->readWord(dest);
+	Word t;
+	if (mmu->readWordTLB(dest, &t)) return;
+	R[n] = (Sdword) (Sword) t;
 	PC+=2;
 }
 
@@ -970,7 +984,7 @@ void SHCpu::MOVLI(Word op)
 	int n = getN(op);
 	Dword dest;
 	dest = (((Dword)(op&0xff)) << 2)+4+(PC&0xfffffffc);
-	R[n]=mmu->readDword(dest);
+	if (mmu->readDwordTLB(dest, &R[n])) return;
 	PC+=2;
 }
 
@@ -984,50 +998,53 @@ void SHCpu::MOV(Word op)
 void SHCpu::MOVBS(Word op) // mov.b Rm, @Rn
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeByte(R[n], (Byte)R[m]);
+	if (mmu->writeByteTLB(R[n], R[m])) return;
 	PC+=2;
 }
 
 void SHCpu::MOVWS(Word op)
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeWord(R[n], (Word)R[m]);
+	if (mmu->writeWordTLB(R[n], R[m])) return;
 	PC+=2;
 }
 
 void SHCpu::MOVLS(Word op)
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeDword(R[n], R[m]);
+	if (mmu->writeDwordTLB(R[n], R[m])) return;
 	PC+=2;
 }
 
 void SHCpu::MOVBL(Word op) // mov.b @Rm, Rn
 {
 	int m = getM(op), n = getN(op);
-	R[n]=(Sdword) (Sbyte) mmu->readByte(R[m]); // sign-extend
+	Byte t;
+	if (mmu->readByteTLB(R[m], &t)) return;
+	R[n] = (Sdword) (Sbyte) t;
 	PC+=2;
 }
 
 void SHCpu::MOVWL(Word op) // mov.w @Rm, Rn
 {
 	int m = getM(op), n = getN(op);
-	R[n]=(Sdword) (Sword) mmu->readWord(R[m]); // sign-extend
+	Word t;
+	if (mmu->readWordTLB(R[m], &t)) return;
+	R[n] = (Sdword) (Sword) t;
 	PC+=2;
 }
 
 void SHCpu::MOVLL(Word op) // mov.l @Rm, Rn
 {
 	int m = getM(op), n = getN(op);
-	R[n]= mmu->readDword(R[m]);
-	//printf("PC is %08x, new PC is %08x\n", PC, PC+2);
+	if (mmu->readDwordTLB(R[m], &R[n])) return;
 	PC+=2;
 }
 
 void SHCpu::MOVBM(Word op) // mov.b Rm, @-Rn
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeByte(R[n]-1, (Byte) R[m]);
+	if (mmu->writeByteTLB(R[n]-1, R[m])) return;
 	R[n]--;
 	PC+=2;
 }
@@ -1035,7 +1052,7 @@ void SHCpu::MOVBM(Word op) // mov.b Rm, @-Rn
 void SHCpu::MOVWM(Word op)
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeWord(R[n]-2, (Word) R[m]);
+	if (mmu->writeWordTLB(R[n]-2, R[m])) return;
 	R[n]-=2;
 	PC+=2;
 }
@@ -1043,7 +1060,7 @@ void SHCpu::MOVWM(Word op)
 void SHCpu::MOVLM(Word op)
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeDword(R[n]-4, R[m]);
+	if (mmu->writeDwordTLB(R[n]-4, R[m])) return;
 	R[n]-=4;
 	PC+=2;
 }
@@ -1051,7 +1068,9 @@ void SHCpu::MOVLM(Word op)
 void SHCpu::MOVBP(Word op) // mov.b @Rm+, Rn
 {
 	int m = getM(op), n = getN(op);
-	R[n]=(Sdword) (Sbyte) mmu->readByte(R[m]); // sign-extend
+	Byte t;
+	if (mmu->readByteTLB(R[m], &t)) return;
+	R[n] = (Sdword) (Sbyte) t;
 	if(n!=m) R[m]++;
 	PC+=2;
 }
@@ -1059,7 +1078,9 @@ void SHCpu::MOVBP(Word op) // mov.b @Rm+, Rn
 void SHCpu::MOVWP(Word op) // mov.w @Rm+, Rn
 {
 	int m = getM(op), n = getN(op);
-	R[n]=(Sdword) (Sword) mmu->readWord(R[m]); // sign-extend
+	Word t;
+	if (mmu->readWordTLB(R[m], &t)) return;
+	R[n] = (Sdword) (Sword) t;
 	if(n!=m) R[m]+=2;
 	PC+=2;
 }
@@ -1067,7 +1088,7 @@ void SHCpu::MOVWP(Word op) // mov.w @Rm+, Rn
 void SHCpu::MOVLP(Word op) // mov.l @Rm+, Rn
 {
 	int m = getM(op), n = getN(op);
-	R[n]= mmu->readDword(R[m]);
+	if (mmu->readDwordTLB(R[m], &R[n])) return;
 	if(n!=m) R[m]+=4;
 	PC+=2;
 }
@@ -1075,42 +1096,46 @@ void SHCpu::MOVLP(Word op) // mov.l @Rm+, Rn
 void SHCpu::MOVBS0(Word op) // mov.b Rm, @(r0, Rn)
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeByte(R[n]+R[0], R[m]);
+	if (mmu->writeByteTLB(R[n]+R[0], R[m])) return;
 	PC+=2;
 }
 
 void SHCpu::MOVWS0(Word op) // mov.w Rm, @(r0, Rn)
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeWord(R[n]+R[0], R[m]);
+	if (mmu->writeWordTLB(R[n]+R[0], R[m])) return;
 	PC+=2;
 }
 
 void SHCpu::MOVLS0(Word op) // mov.l Rm, @(r0, Rn)
 {
 	int m = getM(op), n = getN(op);
-	mmu->writeDword(R[n]+R[0], R[m]);
+	if (mmu->writeDwordTLB(R[n]+R[0], R[m])) return;
 	PC+=2;
 }
 
 void SHCpu::MOVBL0(Word op) // mov.b @(r0, rm), rn
 {
 	int m = getM(op), n = getN(op);
-	R[n] = (Sdword) (Sbyte) mmu->readByte(R[0]+R[m]);
+	Byte t;
+	if (mmu->readByteTLB(R[0]+R[m], &t)) return;
+	R[n] = (Sdword) (Sbyte) t;
 	PC+=2;
 }
 
 void SHCpu::MOVWL0(Word op) // mov.w @(r0, rm), rn
 {
 	int m = getM(op), n = getN(op);
-	R[n] = (Sdword) (Sword) mmu->readWord(R[0]+R[m]);
+	Word t;
+	if (mmu->readWordTLB(R[0]+R[m], &t)) return;
+	R[n] = (Sdword) (Sword) t;
 	PC+=2;
 }
 
 void SHCpu::MOVLL0(Word op) // mov.l @(r0, rm), rn
 {
 	int m = getM(op), n = getN(op);
-	R[n] = mmu->readDword(R[0]+R[m]);
+	if (mmu->readDwordTLB(R[0]+R[m], &R[n])) return;
 	PC+=2;
 }
 
@@ -1118,9 +1143,12 @@ void SHCpu::MACW(Word op)
 {
 	int m = getM(op), n = getN(op);
 	Sdword tm, tn, d,s,a;
+	Word t;
 	Dword t1;
-	tn=(Sdword)mmu->readWord(R[n]);
-	tm=(Sdword)mmu->readWord(R[m]);
+	if (mmu->readWordTLB(R[n], &t)) return;
+	tn = (Sdword) t;
+	if (mmu->readWordTLB(R[m], &t)) return;
+	tm = (Sdword) t;
 	R[n]+=2;
 	R[m]+=2;
 	t1=MACL;
@@ -1255,7 +1283,9 @@ void SHCpu::LDSFPSCR(Word op)
 void SHCpu::LDSMFPSCR(Word op)
 {
 	int n = getN(op);
-	setFPSCR(mmu->readDword(R[n]) & 0x003fffff);
+	Dword t;
+	if (mmu->readDwordTLB(R[n], &t)) return;
+	setFPSCR(t & 0x003fffff);
 	R[n]+=4;
 	PC+=2;
 }
@@ -1270,7 +1300,7 @@ void SHCpu::LDSFPUL(Word op)
 void SHCpu::LDSMFPUL(Word op)
 {
 	int n = getN(op);
-	FPUL = mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &FPUL)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1278,7 +1308,7 @@ void SHCpu::LDSMFPUL(Word op)
 void SHCpu::LDSMPR(Word op)
 {
 	int n = getN(op);
-	PR=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &PR)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1286,7 +1316,7 @@ void SHCpu::LDSMPR(Word op)
 void SHCpu::LDSMMACL(Word op)
 {
 	int n = getN(op);
-	MACL=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &MACL)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1294,7 +1324,7 @@ void SHCpu::LDSMMACL(Word op)
 void SHCpu::LDSMMACH(Word op)
 {
 	int n = getN(op);
-	MACH=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &MACH)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1374,7 +1404,7 @@ void SHCpu::LDCMRBANK(Word op) // privileged
 {
 	int m = getM(op)&0x7, n = getN(op);
 	// n = source, m = dest
-	RBANK[m]=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &RBANK[m])) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1382,7 +1412,9 @@ void SHCpu::LDCMRBANK(Word op) // privileged
 void SHCpu::LDCMSR(Word op)
 {
 	int n = getN(op);
-	setSR(mmu->readDword(R[n])&0x700083f3);
+	Dword t;
+	if (mmu->readDwordTLB(R[n], &t)) return;
+	setSR(t&0x700083f3);
 	R[n]+=4;
 	PC+=2;
 }
@@ -1390,7 +1422,7 @@ void SHCpu::LDCMSR(Word op)
 void SHCpu::LDCMGBR(Word op)
 {
 	int n = getN(op);
-	GBR=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &GBR)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1398,7 +1430,7 @@ void SHCpu::LDCMGBR(Word op)
 void SHCpu::LDCMVBR(Word op)
 {
 	int n = getN(op);
-	VBR=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &VBR)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1407,7 +1439,7 @@ void SHCpu::LDCMVBR(Word op)
 void SHCpu::LDCMSSR(Word op)
 {
 	int n = getN(op);
-	SSR=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &SSR)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1415,7 +1447,7 @@ void SHCpu::LDCMSSR(Word op)
 void SHCpu::LDCMSPC(Word op)
 {
 	int n = getN(op);
-	SPC=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &SPC)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1423,7 +1455,7 @@ void SHCpu::LDCMSPC(Word op)
 void SHCpu::LDCMDBR(Word op)
 {
 	int n = getN(op);
-	DBR=mmu->readDword(R[n]);
+	if (mmu->readDwordTLB(R[n], &DBR)) return;
 	R[n]+=4;
 	PC+=2;
 }
@@ -1894,7 +1926,10 @@ void SHCpu::ANDI(Word op)
 
 void SHCpu::ANDM(Word op) // and.b #imm, @(r0, gbr)
 {
-	mmu->writeByte(R[0]+GBR, ((Dword) (op&0xff)) & (Dword) mmu->readByte(R[0]+GBR));
+	Byte t;
+	if (mmu->readByteTLB(GBR+R[0], &t)) return;
+	t &= (Byte)(op&0xff);
+	if (mmu->writeByteTLB(GBR+R[0], t)) return;
 	PC+=2;
 }
 
@@ -1996,23 +2031,21 @@ void SHCpu::FMOV(Word op)
 void SHCpu::FMOV_STORE(Word op)
 {
 	int m = getM(op), n = getN(op);
-	
+
 	if(FPU_SZ()) // double-precision
 	{
 		m &= 0xe;
 		if (op & 0x0010)
 		{
-			mmu->writeDword(R[n], XF_Dwords[m]);
-			mmu->writeDword(R[n]+4, XF_Dwords[m+1]);
+			if (mmu->writeQwordTLB(R[n], XF_Dwords[m], XF_Dwords[m+1])) return;
 		}
 		else
 		{
-			mmu->writeDword(R[n], FR_Dwords[m]);
-			mmu->writeDword(R[n]+4, FR_Dwords[m+1]);
+			if (mmu->writeQwordTLB(R[n], FR_Dwords[m], FR_Dwords[m+1])) return;
 		}
 	}
 	else // single-precision
-		mmu->writeDword(R[n], FR_Dwords[m]);
+		if (mmu->writeDwordTLB(R[n], FR_Dwords[m])) return;
 	PC+=2;
 }
 
@@ -2025,17 +2058,15 @@ void SHCpu::FMOV_LOAD(Word op)
 		n &= 0xe;
 		if (op & 0x0100)
 		{
-			XF_Dwords[n] = mmu->readDword(R[m]);
-			XF_Dwords[n+1] = mmu->readDword(R[m]+4);
+			if (mmu->readQwordTLB(R[m], &XF_Dwords[n], &XF_Dwords[n+1])) return;
 		}
 		else
 		{
-			FR_Dwords[n] = mmu->readDword(R[m]);
-			FR_Dwords[n+1] = mmu->readDword(R[m]+4);
+			if (mmu->readQwordTLB(R[m], &FR_Dwords[n], &FR_Dwords[n+1])) return;
 		}
 	}
 	else // single-precision
-		FR_Dwords[n] = mmu->readDword(R[m]);
+		if (mmu->readDwordTLB(R[m], &FR_Dwords[n])) return;
 	PC+=2;
 }
 
@@ -2048,19 +2079,17 @@ void SHCpu::FMOV_RESTORE(Word op)
 		n &= 0xe;
 		if (op & 0x0100)
 		{
-			XF_Dwords[n] = mmu->readDword(R[m]);
-			XF_Dwords[n+1] = mmu->readDword(R[m]+4);
+			if (mmu->readQwordTLB(R[m], &XF_Dwords[n], &XF_Dwords[n+1])) return;
 		}
 		else
 		{
-			FR_Dwords[n] = mmu->readDword(R[m]);
-			FR_Dwords[n+1] = mmu->readDword(R[m]+4);
+			if (mmu->readQwordTLB(R[m], &FR_Dwords[n], &FR_Dwords[n+1])) return;
 		}
 		R[m]+=8;
 	}
 	else // single-precision
 	{
-		FR_Dwords[n] = mmu->readDword(R[m]);
+		if (mmu->readDwordTLB(R[m], &FR_Dwords[n])) return;
 		R[m]+=4;
 	}
 	PC+=2;
@@ -2072,23 +2101,21 @@ void SHCpu::FMOV_SAVE(Word op)
     
 	if(FPU_SZ()) // double-precision
 	{
-		R[n]-=8;
 		m &= 0xe;
 		if (op & 0x0010)
 		{
-			mmu->writeDword(R[n], XF_Dwords[m]);
-			mmu->writeDword(R[n]+4, XF_Dwords[m+1]);
+			if (mmu->writeQwordTLB(R[n]-8, XF_Dwords[m], XF_Dwords[m+1])) return;
 		}
 		else
 		{
-			mmu->writeDword(R[n], FR_Dwords[m]);
-			mmu->writeDword(R[n]+4, FR_Dwords[m+1]);
+			if (mmu->writeQwordTLB(R[n]-8, FR_Dwords[m], FR_Dwords[m+1])) return;
 		}
+		R[n]-=8;
 	}
 	else // single-precision
 	{
+		if (mmu->writeDwordTLB(R[n]-4, FR_Dwords[m])) return;
 		R[n]-=4;
-		mmu->writeDword(R[n], FR_Dwords[m]);
 	}
 	PC+=2;
 }
@@ -2102,40 +2129,36 @@ void SHCpu::FMOV_INDEX_LOAD(Word op)
 		n &= 0xe;
 		if (op & 0x0100)
 		{
-			XF_Dwords[n] = mmu->readDword(R[m]+R[0]);
-			XF_Dwords[n+1] = mmu->readDword(R[m]+R[0]+4);
+			if (mmu->readQwordTLB(R[m]+R[0], &XF_Dwords[n], &XF_Dwords[n+1])) return;
 		}
 		else
 		{
-			FR_Dwords[n] = mmu->readDword(R[m]+R[0]);
-			FR_Dwords[n+1] = mmu->readDword(R[m]+R[0]+4);
+			if (mmu->readQwordTLB(R[m]+R[0], &FR_Dwords[n], &FR_Dwords[n+1])) return;
 		}
 	}
 	else // single-precision
-		FR_Dwords[n] = mmu->readDword(R[m]+R[0]);
+		if (mmu->readDwordTLB(R[m]+R[0], &FR_Dwords[n])) return;
 	PC+=2;
 }
 
 void SHCpu::FMOV_INDEX_STORE(Word op)
 {
 	int m = getM(op), n = getN(op);
-    
+
 	if(FPU_SZ()) // double-precision
 	{
 		m &= 0xe;
 		if (op & 0x0010)
 		{
-			mmu->writeDword(R[0]+R[n], XF_Dwords[m]);
-			mmu->writeDword(R[0]+R[n]+4, XF_Dwords[m+1]);
+			if (mmu->writeQwordTLB(R[0]+R[n], XF_Dwords[m], XF_Dwords[m+1])) return;
 		}
 		else
 		{
-			mmu->writeDword(R[0]+R[n], FR_Dwords[m]);
-			mmu->writeDword(R[0]+R[n]+4, FR_Dwords[m+1]);
+			if (mmu->writeQwordTLB(R[0]+R[n], FR_Dwords[m], FR_Dwords[m+1])) return;
 		}
 	}
 	else // single-precision
-		mmu->writeDword(R[0]+R[n], FR_Dwords[m]);
+		if (mmu->writeDwordTLB(R[0]+R[n], FR_Dwords[m])) return;
 	PC+=2;
 }
 
